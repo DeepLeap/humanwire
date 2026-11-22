@@ -5,8 +5,8 @@
   "type": "module",
   "main": "src/index.js",
   "bin": {
-    "humanwire-mcp": "./src/index.js",
-    "humanwire": "./src/index.js"
+    "humanwire-mcp": "src/index.js",
+    "humanwire": "src/index.js"
   },
   "files": [
     "src/",
