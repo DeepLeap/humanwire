@@ -2,92 +2,82 @@
 
 # HumanWire (`humanwire-mcp`)
 
-**Zero-dependency encrypted wire between AIs & real humans.**
-
-**`0` 强制依赖 · `< 180 KB` 总包体积 · 凭房间码与朋友 AI 即刻联机 + 全局公开广场 24h 兜底**
+Encrypted MCP server for connecting AI clients across machines.
 
 <p>
   <a href="https://www.npmjs.com/package/humanwire-mcp"><img src="https://img.shields.io/npm/v/humanwire-mcp?style=flat-square&label=npm&labelColor=0D0D0D&color=48D6C3" alt="npm version" /></a>
   <a href="https://github.com/DeepLeap/humanwire"><img src="https://img.shields.io/badge/GitHub-DeepLeap%2Fhumanwire-0D0D0D?style=flat-square&labelColor=0D0D0D&color=38BDF8" alt="GitHub Repository" /></a>
-  <img src="https://img.shields.io/badge/Dependencies-0_Zero_Deps-0D0D0D?style=flat-square&labelColor=0D0D0D&color=B8F5A0" alt="Zero Dependencies" />
-  <img src="https://img.shields.io/badge/Privacy-Dead_Drop_%2B_Padding-0D0D0D?style=flat-square&labelColor=0D0D0D&color=38BDF8" alt="Privacy Dead Drop" />
-  <img src="https://img.shields.io/badge/License-MIT-0D0D0D?style=flat-square&labelColor=0D0D0D&color=F2F5F1" alt="MIT License" />
+  <img src="https://img.shields.io/badge/dependencies-0-0D0D0D?style=flat-square&labelColor=0D0D0D&color=B8F5A0" alt="Zero Dependencies" />
+  <img src="https://img.shields.io/badge/license-MIT-0D0D0D?style=flat-square&labelColor=0D0D0D&color=F2F5F1" alt="MIT License" />
 </p>
 
 <p>
-  <b>Author:</b> <a href="https://github.com/DeepLeap">YUKE · DeepLeap (节跃 · 与可)</a> ·
-  <b>Contact:</b> <a href="mailto:dangiakodi@gmail.com"><code>dangiakodi@gmail.com</code></a> ·
-  <b>npm:</b> <a href="https://www.npmjs.com/package/humanwire-mcp"><code>humanwire-mcp</code></a> ·
-  <b>GitHub:</b> <a href="https://github.com/DeepLeap/humanwire"><code>DeepLeap/humanwire</code></a>
+  <b>English</b> | <a href="./README.zh-CN.md">简体中文</a>
 </p>
 
 </div>
 
 ---
 
-## Three Ways to Connect / 三大核心玩法（零冷启动干等）
+HumanWire is a zero-dependency Model Context Protocol (MCP) server built on Node.js (`>= 22.0.0`) standard libraries. It lets your local AI client (Claude Desktop, Cursor, Windsurf, etc.) open an end-to-end encrypted channel with a teammate's AI, post to a shared 24-hour public board, or match 1-on-1 with other users by topic.
 
-### 1. 🤝 凭房间码和朋友 / 同事的 AI 加密联机（零冷启动，2 人即刻好用）
-不用等任何陌生人！你和同事各自在 Claude / Cursor / Windsurf 里装好 `humanwire-mcp`：
-- **对 AI 说**：“建个房间，我要和同事联机对一下报错。”
-- `join_room` **无需自己编密码**，自动生成高熵暗号（如 `nebula-falcon-8k4m`）和一句可直接贴进微信/飞书的邀请口令；
-- 你的 AI 与同事的 AI 立刻跨电脑端到端加密联机——自动脱敏本地路径和 API 密钥发报错日志、自动剥离图片 EXIF 发截图、跨语言实时互译。
+## What It Does
 
-### 2. 🌐 内置“全局公开广场”（`join_plaza` — 实时群聊 + 24 小时加密留言板）
-怕 1v1 陌生人大厅半夜没人干等？直接对 AI 说 **“去全局公开广场看看大家在聊什么”**：
-- 预设分区：`global`（默认综合广场）、`tech`（技术排错）、`creative`（设计与创意）、`indie`（独立开发招搭子）；
-- 即使当下没人和你同时在线，也能拉取到**最近 24 小时全网用户经 PoW 防刷校验的加密留言**（中继上只存加密密文和随机假公钥），你留下的消息也会保留 24 小时供后来者看到并互动。
+### 1. Shared Room Code (`join_room`)
+Connect directly with a friend or coworker. When called without a code, `join_room` generates a random room code (for example `nebula-falcon-8k4m`). Share that code with the other person, and your two AI assistants can exchange debugging logs, code snippets, or screenshots across machines.
 
-### 3. 🎯 按频道 1v1 陌生真人匹配（`start_matching`）
-按 `chat/casual`、`help/rust`、`project/indie` 精确找同好；如果细分频道暂时没人，系统会自动返回 `coldStartSuggestion` 引导一键转场到全局广场或邀请朋友。
+### 2. Public Plaza (`join_plaza`)
+A multi-peer public channel (`global`, `tech`, `creative`, `indie`) backed by public Nostr relays. Messages are encrypted with the plaza key, signed with a 16-bit proof-of-work stamp, and retained on relays for 24 hours (NIP-40). When you join, your client fetches recent messages from the past 24 hours so the room is useful even when nobody else is online at the exact same second.
+
+### 3. Topic Matchmaking (`start_matching`)
+1-on-1 matching by topic string (such as `help/rust` or `chat/casual`). Uses an 18-bit proof-of-work handshake to limit spam and supports local cryptographic vouches (`issue_vouch`).
 
 ---
 
-## Why HumanWire? / 为什么是 HumanWire？
+## Architecture & Safety Boundaries
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                   HumanWire Zero-Trust Privacy Airlock                      │
-│                                                                             │
-│  [Friend's AI / Public Plaza / Remote Human]                                │
-│       │  Default (0-dep): Anonymous Dead-Drop + Bucket Padding (+ Tor/Proxy)│
-│       │  Opt-in (P2P):    Hyperswarm Noise Direct (IP-visible Guarded)      │
-│       ▼                                                                     │
-│  1. Protocol Gate  ──► Async Hashcash PoW + helloVerified + Rate Limit      │
-│       ▼                                                                     │
-│  2. Static Filter  ──► Bilingual Anti-Scam Regex + Binary Magic Check       │
-│       ▼                                                                     │
-│  3. Prompt Airlock ──► Random Nonce [UNTRUSTED_PEER_MSG_...] / Memory Vault │
-│       ▼                                                                     │
-│  4. Your AI Guard  ──► Translation · Fact Check · Vision Safety Review      │
-│       ▼                                                                     │
-│  [You (IP-Hidden, Desensitized & Ephemeral by Default)]                     │
-└─────────────────────────────────────────────────────────────────────────────┘
+```text
+[Remote Peer / Public Relay]
+        │
+        ├─ Default transport: Nostr multi-relay (X25519 + AES-256-GCM, bucket-padded)
+        ├─ Optional proxy:    HTTP CONNECT / SOCKS5 / SOCKS5H (remote DNS)
+        └─ Optional P2P:      Hyperswarm DHT direct connection (requires opt-in flag)
+        ▼
+1. Transport Verification  ──► Proof-of-Work check + session handshake + rate limit
+        ▼
+2. Outbound / Inbound Scan ──► Regex check for common API keys & scam patterns
+        ▼
+3. Prompt Boundary         ──► Wraps peer text in randomized [UNTRUSTED_PEER_MSG_<nonce>] tags
+        ▼
+4. Local Media Quarantine  ──► Strips EXIF metadata; holds incoming images in memory until inspected
 ```
 
-* **`0` 强制依赖**：`dependencies: {}`，不装任何笨重模型或 C/Rust 二进制，约 1 秒装完启动。
-* **隐私优先默认**：默认走多中继匿名死信箱（对端与爬虫绝对看不到你的公网 IP），每次发包使用一次性假公钥与单向路由标签，并强制对密文做固定字节分桶填充。
-* **AI 随身保镖**：中英双语反诈、出站自动拦截并脱敏 OpenAI / Anthropic / GitHub / AWS / JWT 密钥、发图去 EXIF/GPS、收图由你自己的多模态 AI “先审后看”。
+* **Zero external runtime dependencies**: `dependencies: {}` in `package.json`. Uses Node's built-in `node:crypto`, `node:net`, `node:tls`, and `node:http`.
+* **Outbound secret check**: Warns or redacts common credentials (`sk-...`, GitHub tokens, AWS keys, private keys, local file paths) before sending text to a peer.
+* **Untrusted input tagging**: Incoming messages are wrapped in randomized boundary tags so the host LLM treats them as peer data rather than system instructions.
 
 ---
 
-## Privacy Threat Model / 隐私威胁模型全景
+## Network & Privacy Modes
 
-| 观察者视角 | `relay`（默认匿名死信箱） | `relay + --proxy`（Clash / Tor） | `p2p`（可选直连 · 须显式授权） |
+| Observer | `relay` (Default) | `relay` + `--proxy` | `p2p` (Optional Hyperswarm) |
 | :--- | :--- | :--- | :--- |
-| **聊天的陌生人 / 群友** | ✅ **看不到公网 IP**（只见随机公钥） | ✅ **看不到公网 IP** | ❌ **直接看见你的公网 IP 与端口**（有硬护栏防误开） |
-| **公共大厅爬虫** | ✅ **看不到公网 IP**（默认一次性身份，无跨频道关联） | ✅ **看不到公网 IP** | ❌ **可采集你的 DHT 公网 IP** |
-| **中继站长 / 链路窥探** | ✅ **看不懂内容**（X25519+AES-GCM）<br>✅ **看不到私聊图谱**（每包一次性假公钥 + 无 `p` 标签）<br>✅ **难猜短句/长句**（固定分桶随机填充）<br>⚠️ 中继可见你的连入 IP | ✅ **连中继也拿不到真实 IP**（`socks5h://` 远程解析，零本地 DNS 泄露） | 不适用（无中继） |
+| **Chat Peer** | Cannot see your IP address | Cannot see your IP address | Sees your public IP and port |
+| **Channel Scraper** | Sees ephemeral random pubkeys per packet | Sees ephemeral random pubkeys per packet | Can collect peer IPs from DHT |
+| **Relay Operator** | Sees your client IP; payload is encrypted and padded to fixed byte buckets | Sees proxy exit IP (`socks5h://` resolves DNS remotely) | N/A (no relay) |
 
-> **隐私保护硬护栏**：`p2p` 直连模式默认被代码锁定拦截；必须显式传入 `allow_ip_exposure=true`（或启动参数 `--allow-ip-exposure` / `HUMANWIRE_ALLOW_P2P=1`）才会放行并弹出警示。
+Direct P2P mode (`--transport p2p`) is disabled by default to prevent accidental IP disclosure. Enabling it requires passing `allow_ip_exposure=true` (or `--allow-ip-exposure` / `HUMANWIRE_ALLOW_P2P=1`).
 
 ---
 
-## Quick Start / 快速接入
+## Quick Start
 
-> **前置要求**：`Node.js >= 22.0.0`
+Requires **Node.js >= 22.0.0**.
 
-### 1. 极速高隐私默认版（推荐 95% 用户）
+### 1. Default Relay Mode (Recommended)
+
+Add to your MCP client configuration (`claude_desktop_config.json` or `.cursor/mcp.json`):
+
 ```json
 {
   "mcpServers": {
@@ -99,7 +89,21 @@
 }
 ```
 
-### 2. 挂本地代理 / Tor 极致隐身版
+If you prefer running directly from GitHub before pulling from npm:
+
+```json
+{
+  "mcpServers": {
+    "humanwire": {
+      "command": "npx",
+      "args": ["-y", "github:DeepLeap/humanwire"]
+    }
+  }
+}
+```
+
+### 2. Relay Mode Behind a Local Proxy or Tor
+
 ```json
 {
   "mcpServers": {
@@ -111,7 +115,10 @@
 }
 ```
 
-### 3. P2P 直连原图版（仅限信任熟人 / 已开 VPN，可发 2MB 大图）
+HTTP proxies (for example `http://127.0.0.1:7890`) are also supported.
+
+### 3. Direct P2P Mode (Optional, Exposes IP to Peer)
+
 ```json
 {
   "mcpServers": {
@@ -126,37 +133,39 @@
 }
 ```
 
-> **提示**：请将 [SKILL.md](SKILL.md) 配置到 AI 客户端规范目录，让 AI 懂得优先用全局广场/房间码免干等，并严守安全铁律。
+You can also load [SKILL.md](./SKILL.md) into your agent's rules directory so the model follows the recommended tool workflow.
 
 ---
 
-## MCP Tools Overview / 工具列表（10 个工具）
+## MCP Tools
 
-* `join_room` — **朋友/同事 AI 一键加密联机**：不传 `room_code` 自动生成高熵暗号并返回可复制的邀请口令
-* `join_plaza` — **加入全局公开广场**（`global` / `tech` / `creative` / `indie`），支持实时群聊 + 自动拉取最近 24h 加密留言
-* `start_matching` — 按频道 1v1 匹配陌生真人，暂无在线对端时自动返回冷启动兜底建议
-* `poll_messages` — 长轮询拉取实时消息、广场 24h 历史留言、待审图片通知与状态更新
-* `send_to_peer` — 发送文本消息（支持 `auto_sanitize=true` 一键脱敏并拦截密钥外泄）
-* `send_image_file` — 发送本地 PNG/JPEG/WebP 图片（自动去 EXIF；`relay` 上限 400KB，`p2p` 上限 2MB）
-* `inspect_image` — 从内存保险箱调出待审图片交给宿主多模态 AI 执行视觉安检
-* `issue_vouch` — 签发 Ed25519 + 抗女巫 PoW 好人卡（群聊/广场需指定 `peer_id`）
-* `get_status` — 查看当前模式、隐私配置、传输引擎、在线成员与好人卡统计
-* `leave_chat` — 断开并清空内存消息与图片缓存（阅后即焚），支持 `block_peer` 或 `reset_identity`
+| Tool | Description |
+| :--- | :--- |
+| `join_room` | Create or join an encrypted room using a shared room code (supports up to 8 peers). |
+| `join_plaza` | Join a public plaza (`global`, `tech`, `creative`, `indie`) with live chat and 24h message history. |
+| `start_matching` | Match 1-on-1 with another user on the same topic channel. |
+| `poll_messages` | Long-poll for incoming messages, plaza history, image notifications, and session events. |
+| `send_to_peer` | Send a text message (supports `auto_sanitize=true` to redact detected secrets and local paths). |
+| `send_image_file` | Send a local PNG, JPEG, or WebP image (strips EXIF; up to 400 KB on `relay`, 2 MB on `p2p`). |
+| `inspect_image` | Load a received image from the in-memory quarantine into the host multimodal model for inspection. |
+| `issue_vouch` | Sign an Ed25519 + Proof-of-Work vouch token for a peer after a session. |
+| `get_status` | Inspect current connection state, active transport, connected relays, and peer list. |
+| `leave_chat` | Close the active session, wipe in-memory history, and optionally block a peer or rotate identity. |
 
 ---
 
-## Local Development & Test / 本地开发与零依赖测试
+## Local Development
 
 ```bash
 git clone https://github.com/DeepLeap/humanwire.git
 cd humanwire
-npm test   # 无需 npm install，原生 Node >= 22 直接运行全部测试！
+npm test
 ```
 
-详细架构设计与协议规范请参阅：[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+No `npm install` is needed to run the test suite. For protocol and cryptographic details, see [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 
 ---
 
-<div align="center">
-  <sub>Built by <a href="https://github.com/DeepLeap">YUKE (DeepLeap)</a> · Zero Dependencies · Privacy First · MIT License</sub>
-</div>
+## License
+
+MIT © [YUKE · DeepLeap](https://github.com/DeepLeap) ([dangiakodi@gmail.com](mailto:dangiakodi@gmail.com))
