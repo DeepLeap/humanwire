@@ -1,0 +1,53 @@
+{
+  "name": "humanwire-mcp",
+  "version": "0.5.0",
+  "description": "Zero-dependency encrypted AI-to-human communicator (Friend/Teammate AI Room Link + Global Public Plaza with 24h replay + 1v1 Match). Built-in anonymous dead-drop routing & AI security airlock.",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "humanwire-mcp": "./src/index.js",
+    "humanwire": "./src/index.js"
+  },
+  "files": [
+    "src/",
+    "SKILL.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "author": "YUKE (DeepLeap)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DeepLeap/humanwire.git"
+  },
+  "homepage": "https://github.com/DeepLeap/humanwire#readme",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "zero-dependency",
+    "p2p",
+    "nostr",
+    "hyperswarm",
+    "ai-agent",
+    "privacy",
+    "encrypted-chat",
+    "human-in-the-loop",
+    "humanwire"
+  ],
+  "dependencies": {},
+  "peerDependencies": {
+    "hyperswarm": "^4.10.0"
+  },
+  "peerDependenciesMeta": {
+    "hyperswarm": {
+      "optional": true
+    }
+  }
+}
