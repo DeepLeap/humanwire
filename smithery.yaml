@@ -1,0 +1,38 @@
+# Smithery.ai MCP configuration file
+# https://smithery.ai/docs/config#smitheryyaml
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      transport:
+        type: string
+        enum:
+          - relay
+          - p2p
+        default: relay
+        description: "Transport backend: 'relay' (default, Nostr multi-relay dead-drop, hides peer IP) or 'p2p' (optional Hyperswarm DHT)."
+      proxy:
+        type: string
+        description: "Optional local proxy URL for relay connections (e.g. socks5h://127.0.0.1:9050 or http://127.0.0.1:7890)."
+      allowIpExposure:
+        type: boolean
+        default: false
+        description: "Explicit opt-in required when using 'p2p' direct transport."
+  commandFunction: |-
+    (config) => {
+      const args = ['src/index.js'];
+      if (config && config.transport) {
+        args.push('--transport', config.transport);
+      }
+      if (config && config.proxy) {
+        args.push('--proxy', config.proxy);
+      }
+      if (config && config.allowIpExposure) {
+        args.push('--allow-ip-exposure');
+      }
+      return {
+        command: 'node',
+        args
+      };
+    }
