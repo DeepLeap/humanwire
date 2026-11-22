@@ -21,25 +21,37 @@
   "engines": {
     "node": ">=22.0.0"
   },
-  "author": "YUKE (DeepLeap)",
+  "author": {
+    "name": "YUKE · DeepLeap",
+    "email": "279807025+DeepLeap@users.noreply.github.com",
+    "url": "https://github.com/DeepLeap"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/DeepLeap/humanwire.git"
+    "url": "git+https://github.com/DeepLeap/humanwire.git"
+  },
+  "bugs": {
+    "url": "https://github.com/DeepLeap/humanwire/issues"
   },
   "homepage": "https://github.com/DeepLeap/humanwire#readme",
   "keywords": [
     "mcp",
     "mcp-server",
+    "model-context-protocol",
     "zero-dependency",
     "p2p",
     "nostr",
     "hyperswarm",
     "ai-agent",
+    "claude",
+    "cursor",
     "privacy",
+    "e2ee",
     "encrypted-chat",
     "human-in-the-loop",
-    "humanwire"
+    "humanwire",
+    "deepleap"
   ],
   "dependencies": {},
   "peerDependencies": {

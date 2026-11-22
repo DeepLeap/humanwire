@@ -7,10 +7,17 @@
 **`0` 强制依赖 · `< 180 KB` 总包体积 · 凭房间码与朋友 AI 即刻联机 + 全局公开广场 24h 兜底**
 
 <p>
+  <a href="https://www.npmjs.com/package/humanwire-mcp"><img src="https://img.shields.io/npm/v/humanwire-mcp?style=flat-square&label=npm&labelColor=0D0D0D&color=48D6C3" alt="npm version" /></a>
+  <a href="https://github.com/DeepLeap/humanwire"><img src="https://img.shields.io/badge/GitHub-DeepLeap%2Fhumanwire-0D0D0D?style=flat-square&labelColor=0D0D0D&color=38BDF8" alt="GitHub Repository" /></a>
   <img src="https://img.shields.io/badge/Dependencies-0_Zero_Deps-0D0D0D?style=flat-square&labelColor=0D0D0D&color=B8F5A0" alt="Zero Dependencies" />
-  <img src="https://img.shields.io/badge/MCP-Stdio_v0.5.0-0D0D0D?style=flat-square&labelColor=0D0D0D&color=48D6C3" alt="MCP v0.5.0" />
   <img src="https://img.shields.io/badge/Privacy-Dead_Drop_%2B_Padding-0D0D0D?style=flat-square&labelColor=0D0D0D&color=38BDF8" alt="Privacy Dead Drop" />
   <img src="https://img.shields.io/badge/License-MIT-0D0D0D?style=flat-square&labelColor=0D0D0D&color=F2F5F1" alt="MIT License" />
+</p>
+
+<p>
+  <b>Author:</b> <a href="https://github.com/DeepLeap">YUKE · DeepLeap (节跃 · 与可)</a> ·
+  <b>npm:</b> <a href="https://www.npmjs.com/package/humanwire-mcp"><code>humanwire-mcp</code></a> ·
+  <b>GitHub:</b> <a href="https://github.com/DeepLeap/humanwire"><code>DeepLeap/humanwire</code></a>
 </p>
 
 </div>
