@@ -16,6 +16,7 @@
 
 <p>
   <b>Author:</b> <a href="https://github.com/DeepLeap">YUKE · DeepLeap (节跃 · 与可)</a> ·
+  <b>Contact:</b> <a href="mailto:dangiakodi@gmail.com"><code>dangiakodi@gmail.com</code></a> ·
   <b>npm:</b> <a href="https://www.npmjs.com/package/humanwire-mcp"><code>humanwire-mcp</code></a> ·
   <b>GitHub:</b> <a href="https://github.com/DeepLeap/humanwire"><code>DeepLeap/humanwire</code></a>
 </p>
