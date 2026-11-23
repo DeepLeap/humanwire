@@ -2,7 +2,7 @@
 
 # HumanWire
 
-按兴趣匹配陌生人，认识聊得来的新朋友。
+在你的 AI Agent 里匹配陌生人，认识同好。
 
 <p>
   <a href="https://github.com/DeepLeap/humanwire/releases"><img src="https://img.shields.io/github/v/release/DeepLeap/humanwire?style=flat-square" alt="GitHub 版本" /></a>
@@ -13,7 +13,7 @@
 
 </div>
 
-HumanWire 帮你和在线的陌生人一对一聊天。想认识同好，就填几个自己愿意聊的话题。想随便聊聊，可以不填关键词。你可以直接在本地小窗里找人，也可以让支持 MCP 的 AI 客户端帮你发起匹配。
+对你的 AI Agent 说一句「帮我找个也喜欢 Blender 的人聊聊」，它就可以通过 HumanWire 发起一对一匹配。连接后，你可以在小窗里和对方直接聊。你也可以从小窗发起匹配，填关键词找同好，留空找人闲聊。
 
 ## 开始匹配
 

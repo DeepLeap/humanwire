@@ -2,7 +2,7 @@
 
 # HumanWire
 
-Meet someone new who shares your interests.
+Ask your AI agent to match you with someone new.
 
 <p>
   <a href="https://github.com/DeepLeap/humanwire/releases"><img src="https://img.shields.io/github/v/release/DeepLeap/humanwire?style=flat-square" alt="GitHub release" /></a>
@@ -13,7 +13,7 @@ Meet someone new who shares your interests.
 
 </div>
 
-HumanWire pairs you one-on-one with someone online who shares an interest. Pick a few topics you would enjoy talking about, or leave them blank to meet someone for casual chat. People can chat in the local window or ask a compatible AI client to start a match for them.
+Tell your AI agent, “Find someone else who’s into Blender.” With HumanWire, a compatible MCP client can start a one-on-one match with someone online who shares your interests. Once connected, chat directly with the other person in the local window. You can also start a match from the window, with shared-interest keywords or with no keywords for casual chat.
 
 ## Find a match
 

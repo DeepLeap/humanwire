@@ -1,6 +1,6 @@
 {
   "name": "io.github.DeepLeap/humanwire",
-  "description": "Find people to chat with via topic-based 1:1 matching. MCP server on npm.",
+  "description": "Use an AI agent to start one-on-one topic matchmaking with strangers via MCP.",
   "repository": {
     "url": "https://github.com/DeepLeap/humanwire",
     "source": "github"

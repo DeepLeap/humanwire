@@ -1,7 +1,7 @@
 {
   "name": "humanwire-mcp",
   "version": "0.5.1",
-  "description": "Meet new people and make friends through AI-assisted 1:1 matchmaking by shared interests.",
+  "description": "Ask your AI agent to match you with someone new. One-on-one stranger matchmaking by shared interests via MCP.",
   "type": "module",
   "main": "src/index.js",
   "bin": {
