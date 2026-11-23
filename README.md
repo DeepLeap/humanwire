@@ -2,7 +2,7 @@
 
 # HumanWire
 
-Ask your AI agent to match you with someone new.
+Meet and talk to real people in your AI agent chat.
 
 <p>
   <a href="https://github.com/DeepLeap/humanwire/releases"><img src="https://img.shields.io/github/v/release/DeepLeap/humanwire?style=flat-square" alt="GitHub release" /></a>
@@ -13,9 +13,34 @@ Ask your AI agent to match you with someone new.
 
 </div>
 
-Tell your AI agent, “Find someone else who’s into Blender.” With HumanWire, a compatible MCP client can start a one-on-one match with someone online who shares your interests. Once connected, chat directly with the other person in the local window. You can also start a match from the window, with shared-interest keywords or with no keywords for casual chat.
+HumanWire matches you one-on-one with someone online who shares your interests. You can send messages and see the other person's replies in that same AI conversation through MCP. For live replies while your AI is idle, open the HumanWire chat window.
 
-## Find a match
+> **You:** Find someone else who’s into Blender.
+>
+> **Peer, after matching:** I’m making a short film in Blender. What are you working on?
+
+## Start from your AI agent
+
+Use the GitHub source with **Node.js 22 or later**. Configure your AI client to run HumanWire as a local stdio MCP server. Replace the example path with the absolute path to your checkout:
+
+```json
+{
+  "mcpServers": {
+    "humanwire": {
+      "command": "node",
+      "args": ["/absolute/path/to/humanwire/src/index.js"]
+    }
+  }
+}
+```
+
+Ask your AI to find someone who shares an interest, or find a stranger for casual chat. It can start a match with `start_matching`, send your messages with `send_to_peer`, and bring replies back into the same conversation with `poll_messages`. The host displays replies when it calls the receive tool, which can wait up to 25 seconds per call.
+
+For live replies while the AI is idle, add `--chat-window` to the launch arguments. After starting a match, ask your AI to call `open_chat_window` for the same session. The window receives and sends messages independently while the local MCP process runs. Desktop unread notifications and on-device translation depend on browser support. See the [host integration guide](./docs/INTEGRATION.md) and [agent workflow](./SKILL.md).
+
+These examples use the GitHub source for v0.5.1. Check the version on [npm](https://www.npmjs.com/package/humanwire-mcp) before using keyword matching or `--chat-window` with a registry install.
+
+## Use the standalone chat window
 
 Use the GitHub source for this quick start. It requires **Node.js 22 or later**.
 
@@ -30,27 +55,6 @@ npm run chat
 3. Click **开始匹配** (start matching). When you connect, type in the chat window and press Enter. Click **结束** (end) to leave.
 
 HumanWire normalizes case, spacing, and common full-width characters. In keyword mode, both sides must be searching and have at least one normalized keyword in common. For example, `Blender, 3D animation` can match `blender, motion design`. Matching uses keyword overlap; availability depends on other people being online. You can ask an AI to suggest keywords from your public interests before you search.
-
-## Start a match from your AI client
-
-Configure HumanWire as a local stdio MCP server. Replace the script path with the absolute path from your checkout:
-
-```json
-{
-  "mcpServers": {
-    "humanwire": {
-      "command": "node",
-      "args": ["/absolute/path/to/humanwire/src/index.js", "--chat-window"]
-    }
-  }
-}
-```
-
-Ask your AI to find someone who wants to talk about a topic and open the HumanWire window. It can call `start_matching` with a comma-separated `keywords` string, then `open_chat_window`. The window uses the same session and keeps message text out of the model context. It can receive replies while the AI is idle as long as the local MCP process stays running. Desktop unread notifications and on-device translation depend on browser support and permissions.
-
-To use the host's native AI transcript, omit `--chat-window`. In that mode, the host calls `poll_messages` to fetch new messages, waiting up to 25 seconds per call. Replies arrive in the transcript when the host calls the tool. An inline chat card is an integration option for hosts with independent UI support. See the [host integration guide](./docs/INTEGRATION.md) and [agent workflow](./SKILL.md).
-
-These examples use the GitHub source for v0.5.1. Check the version on [npm](https://www.npmjs.com/package/humanwire-mcp) before using keyword matching or `--chat-window` with a registry install.
 
 ## Invite a friend or visit the plaza
 

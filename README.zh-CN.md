@@ -2,7 +2,7 @@
 
 # HumanWire
 
-在你的 AI Agent 里匹配陌生人，认识同好。
+让真人出现在你的 AI Agent 对话里。
 
 <p>
   <a href="https://github.com/DeepLeap/humanwire/releases"><img src="https://img.shields.io/github/v/release/DeepLeap/humanwire?style=flat-square" alt="GitHub 版本" /></a>
@@ -13,9 +13,34 @@
 
 </div>
 
-对你的 AI Agent 说一句「帮我找个也喜欢 Blender 的人聊聊」，它就可以通过 HumanWire 发起一对一匹配。连接后，你可以在小窗里和对方直接聊。你也可以从小窗发起匹配，填关键词找同好，留空找人闲聊。
+HumanWire 帮你按兴趣匹配在线陌生人。匹配后，对方的回复可以出现在你原来的 AI 对话里，你也能在这里回话。想在 AI 空闲时实时收信，可以打开 HumanWire 小窗。
 
-## 开始匹配
+> **你：** 帮我找个也喜欢 Blender 的人聊聊。
+>
+> **对方匹配后回复：** 我最近在用 Blender 做短片，你在做什么？
+
+## 在 AI Agent 里开始匹配和聊天
+
+从 GitHub 获取源码，需要 **Node.js 22 或更新版本**。把 HumanWire 配置为本地 stdio MCP 服务，并把示例路径换成你的项目绝对路径：
+
+```json
+{
+  "mcpServers": {
+    "humanwire": {
+      "command": "node",
+      "args": ["/absolute/path/to/humanwire/src/index.js"]
+    }
+  }
+}
+```
+
+对 Agent 说一句「帮我找人聊聊」，它可以调用 `start_matching` 发起匹配，用 `send_to_peer` 发送你的话，用 `poll_messages` 把对方的回复带回同一个 AI 对话。宿主调用收信工具时才会显示回复，单次最多等待 25 秒。
+
+想让来信在 AI 空闲时也直接显示，可以在启动参数末尾加上 `--chat-window`。发起匹配后，请 Agent 调用 `open_chat_window`，小窗会接到同一个会话，在本地 MCP 进程运行期间独立收发正文。桌面未读提醒和本地翻译取决于浏览器支持。详见[宿主适配指南](./docs/INTEGRATION.md)和 [AI 工具流程](./SKILL.md)。
+
+以上示例使用 GitHub 上的 v0.5.1 源码。从 [npm](https://www.npmjs.com/package/humanwire-mcp) 安装时，请先确认发布版本是否支持兴趣关键词和 `--chat-window`。
+
+## 直接使用聊天小窗
 
 从 GitHub 获取源码，需要 **Node.js 22 或更新版本**。
 
@@ -30,27 +55,6 @@ npm run chat
 3. 点击「开始匹配」。连接后，在小窗输入消息并按回车。结束时点击「结束」。
 
 关键词会归一化大小写、空格和常见全角字符。按兴趣匹配时，双方都要在线寻找同好，且至少有一个归一后的关键词相同。例如 `Blender, 3D 动画` 可以和 `blender, 动态设计` 匹配。匹配机会取决于当前在线情况，也可以让 AI 先根据你愿意公开的兴趣建议关键词。
-
-## 让 AI 帮你找人
-
-将 HumanWire 配置为本地 stdio MCP 服务。把脚本路径替换为你实际的绝对路径：
-
-```json
-{
-  "mcpServers": {
-    "humanwire": {
-      "command": "node",
-      "args": ["/absolute/path/to/humanwire/src/index.js", "--chat-window"]
-    }
-  }
-}
-```
-
-可以对 AI 说「帮我找个也想聊 Blender 的人，并打开 HumanWire 小窗」。AI 可以用逗号分隔的 `keywords` 调用 `start_matching`，再调用 `open_chat_window`。小窗使用同一个会话，聊天正文留在小窗。只要本地 MCP 进程仍在运行，AI 空闲时也能收信。浏览器允许时，还可以启用桌面未读提醒与本地翻译。
-
-如果要在 AI 的原生对话里收发，启动时省略 `--chat-window`。这种模式下，宿主调用 `poll_messages` 后才会显示新消息，单次等待最长 25 秒。支持独立界面的宿主可以适配内嵌聊天卡片。详见[宿主适配指南](./docs/INTEGRATION.md)和 [AI 工具流程](./SKILL.md)。
-
-以上示例使用 GitHub 上的 v0.5.1 源码。从 [npm](https://www.npmjs.com/package/humanwire-mcp) 安装时，请先确认发布版本是否支持兴趣关键词和 `--chat-window`。
 
 ## 邀请朋友和逛广场
 
