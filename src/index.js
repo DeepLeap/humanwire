@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import os from 'node:os';
 import path from 'node:path';
+import { createChatMutationGuard, startChatWindow } from './chat-window.js';
 import { SimpleMcpServer } from './mcp-stdio.js';
-import { P2PMatchManager } from './p2p.js';
+import { openBrowser } from './open-browser.js';
+import { MAX_MATCH_KEYWORDS_INPUT, P2PMatchManager } from './p2p.js';
 import { DEFAULT_NOSTR_RELAYS } from './transport-relay.js';
 import {
   detectOutboundSecretLeak,
@@ -18,11 +20,14 @@ function parseCliConfig(argv, env) {
   let allowIpExposure = env.HUMANWIRE_ALLOW_P2P === '1';
   let forceEphemeral = env.HUMANWIRE_EPHEMERAL === '1';
   let persistFlag = env.HUMANWIRE_PERSIST === '1';
+  let chatWindow = false;
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--ephemeral') {
       forceEphemeral = true;
+    } else if (arg === '--chat-window') {
+      chatWindow = true;
     } else if (arg === '--persist') {
       persistFlag = true;
     } else if (arg === '--allow-ip-exposure') {
@@ -64,10 +69,12 @@ function parseCliConfig(argv, env) {
     proxyUrl: proxyUrl.trim() || null,
     allowIpExposure,
     stateFilePath,
+    chatWindow,
   };
 }
 
 const config = parseCliConfig(process.argv.slice(2), process.env);
+const runMutation = config.chatWindow ? createChatMutationGuard() : (operation) => operation();
 
 const manager = new P2PMatchManager({
   defaultTransport: config.defaultTransport,
@@ -75,11 +82,12 @@ const manager = new P2PMatchManager({
   proxyUrl: config.proxyUrl,
   allowIpExposure: config.allowIpExposure,
   stateFilePath: config.stateFilePath,
+  displayOnly: config.chatWindow,
 });
 
 const server = new SimpleMcpServer({
   name: 'humanwire-mcp',
-  version: '0.5.0',
+  version: '0.5.1',
 });
 
 function jsonResult(obj) {
@@ -88,17 +96,52 @@ function jsonResult(obj) {
   };
 }
 
+function registerLegacyChatTool(tool) {
+  if (!config.chatWindow) server.registerTool(tool);
+}
+
+let chatWindowPromise;
+let browserOpenPromise;
+let shuttingDown = false;
+
+if (config.chatWindow) {
+  server.registerTool({
+    name: 'open_chat_window',
+    description: '用户请求聊天或打开小窗时，打开与当前匹配或房间共用会话的 HumanWire 窗口。双方聊天正文只在小窗里收发。',
+    inputSchema: { type: 'object', properties: {} },
+    handler: async () => {
+      if (shuttingDown) throw new Error('HumanWire 正在关闭。');
+      chatWindowPromise ??= startChatWindow({ manager, runMutation }).catch((error) => {
+        chatWindowPromise = undefined;
+        throw error;
+      });
+      const chatWindow = await chatWindowPromise;
+      if (shuttingDown) throw new Error('HumanWire 正在关闭。');
+      browserOpenPromise ??= openBrowser(chatWindow.url).finally(() => {
+        browserOpenPromise = undefined;
+      });
+      await browserOpenPromise;
+      return jsonResult({ ok: true, note: '已请求打开 HumanWire 小窗。新消息会在小窗里显示。' });
+    },
+  });
+}
+
 server.registerTool({
   name: 'start_matching',
   description:
-    '完成异步微型 PoW 后加入无服务器公共大厅，按频道寻找 1v1 在线真人。默认采用零依赖匿名死信箱 relay（隐藏公网 IP 与社交图谱）；切 p2p 需传 allow_ip_exposure=true。',
+    '完成异步微型 PoW 后加入公共大厅，按共有关键词或精确频道寻找 1v1 在线真人。默认使用 relay；切换 p2p 需传 allow_ip_exposure=true。',
   inputSchema: {
     type: 'object',
     properties: {
       channel: {
         type: 'string',
         default: 'chat/casual',
-        description: '频道名，如 chat/casual、help/rust、project/indie',
+        description: '精确频道名，仅在不传 keywords 时使用，如 chat/casual 或 project/indie',
+      },
+      keywords: {
+        type: 'string',
+        maxLength: MAX_MATCH_KEYWORDS_INPUT,
+        description: '可公开的 1 至 5 个关键词或短语，用逗号分隔。至少一个词相同才匹配。不要填写身份、完整画像或私有项目资料。',
       },
       nickname: {
         type: 'string',
@@ -137,6 +180,7 @@ server.registerTool({
   },
   handler: async ({
     channel,
+    keywords,
     nickname,
     purpose,
     language,
@@ -144,22 +188,27 @@ server.registerTool({
     transport,
     allow_ip_exposure,
   }) => {
-    const res = await manager.startMatching({
+    const res = await runMutation(() => manager.startMatching({
       channel,
+      keywords,
       nickname,
       intentCard: { purpose: purpose || '随便聊聊/互助', language },
       minVouches: min_vouches,
       transport,
       allowIpExposure: allow_ip_exposure,
-    });
+    }));
+    if (config.chatWindow) {
+      return jsonResult({ ...res, note: '已开始匹配。请用 open_chat_window 打开小窗等待消息。' });
+    }
     return jsonResult(res);
   },
 });
 
 server.registerTool({
   name: 'join_room',
-  description:
-    '凭房间码和朋友/同事的 AI 客户端一键跨端加密联机（支持传脱敏日志与去 EXIF 截图）。不传 room_code 时自动生成高熵暗号房间码并返回可复制给朋友的邀请口令。',
+  description: config.chatWindow
+    ? '凭房间码加入加密聊天。省略房间码可创建新房间，用 open_chat_window 打开同一会话的文本聊天小窗。'
+    : '凭房间码和朋友/同事的 AI 客户端一键跨端加密联机（支持传脱敏日志与去 EXIF 截图）。不传 room_code 时自动生成高熵暗号房间码并返回可复制给朋友的邀请口令。',
   inputSchema: {
     type: 'object',
     properties: {
@@ -195,18 +244,25 @@ server.registerTool({
     },
   },
   handler: async ({ room_code, nickname, max_peers, transport, allow_ip_exposure }) => {
-    const res = await manager.joinRoom({
+    const res = await runMutation(() => manager.joinRoom({
       roomCode: room_code,
       nickname,
       maxPeers: max_peers,
       transport,
       allowIpExposure: allow_ip_exposure,
-    });
+    }));
+    if (config.chatWindow) {
+      return jsonResult({
+        ...res,
+        inviteText: `请在 HumanWire 小窗选择房间并输入房间码：${res.roomCode}`,
+        note: '已加入房间。请用 open_chat_window 打开小窗收发消息。',
+      });
+    }
     return jsonResult(res);
   },
 });
 
-server.registerTool({
+registerLegacyChatTool({
   name: 'join_plaza',
   description:
     '加入内置的“全局公开广场”多人聊天室（默认 plaza="global"，支持实时群聊 + 自动拉取最近 24 小时广场加密留言板，彻底解决 1v1 没人时的冷启动干等）。',
@@ -256,7 +312,7 @@ server.registerTool({
   },
 });
 
-server.registerTool({
+registerLegacyChatTool({
   name: 'send_to_peer',
   description: '向当前已匹配的真人或群聊发送文本消息（支持自动脱敏路径/密钥/邮箱/手机号与 IP）。',
   inputSchema: {
@@ -294,7 +350,7 @@ server.registerTool({
   },
 });
 
-server.registerTool({
+registerLegacyChatTool({
   name: 'send_image_file',
   description:
     '向当前已连接的真人发送一张本地 PNG/JPEG/WebP 图片（发送前自动剥离 EXIF/GPS 元数据，relay 模式上限 400KB，p2p 模式上限 2MB）。',
@@ -320,7 +376,7 @@ server.registerTool({
   },
 });
 
-server.registerTool({
+registerLegacyChatTool({
   name: 'inspect_image',
   description:
     '从内存保险箱提取对方发来的待审图片，交由宿主多模态 AI 直接执行零下载视觉审核（识别 NSFW、二维码、收款码或引流广告）。',
@@ -376,7 +432,7 @@ server.registerTool({
   },
 });
 
-server.registerTool({
+registerLegacyChatTool({
   name: 'poll_messages',
   description: '短轮询拉取匹配状态、新消息（已包裹防注入标签）与待审图片通知。',
   inputSchema: {
@@ -397,7 +453,7 @@ server.registerTool({
   },
 });
 
-server.registerTool({
+registerLegacyChatTool({
   name: 'issue_vouch',
   description: '用本地 Ed25519 私钥与抗女巫 PoW 给当前靠谱的真人签发一张匿名加密“好人卡”信誉凭证。',
   inputSchema: {
@@ -425,14 +481,26 @@ server.registerTool({
 
 server.registerTool({
   name: 'get_status',
-  description: '查看当前会话状态、隐私配置、传输引擎、已连接成员、好人卡数量与黑名单统计。',
+  description: config.chatWindow
+    ? '查看当前匹配、连接和传输状态。聊天正文由小窗显示。'
+    : '查看当前会话状态、隐私配置、传输引擎、已连接成员、好人卡数量与黑名单统计。',
   inputSchema: {
     type: 'object',
     properties: {},
   },
   handler: async () => {
     await manager.preloadState();
-    return jsonResult(manager.getStatus());
+    const status = manager.getStatus();
+    if (config.chatWindow) {
+      return jsonResult({
+        mode: status.mode,
+        transport: status.transport,
+        connected: status.mode === 'CONNECTED_1V1' ||
+          (status.mode === 'GROUP_ROOM' && status.connectedPeers.length > 0),
+        relayCount: status.relayStatus?.connectedRelays ?? 0,
+      });
+    }
+    return jsonResult(status);
   },
 });
 
@@ -455,18 +523,22 @@ server.registerTool({
     },
   },
   handler: async ({ block_peer, reset_identity }) => {
-    const res = reset_identity
-      ? await manager.resetIdentity()
-      : await manager.leaveChat({ blockPeer: block_peer });
+    const res = await runMutation(() => reset_identity
+      ? manager.resetIdentity()
+      : manager.leaveChat({ blockPeer: block_peer }));
     return jsonResult(res);
   },
 });
 
-let shuttingDown = false;
 async function shutdown(code = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
-  await manager.destroy().catch(() => {});
+  const chatWindow = await chatWindowPromise?.catch(() => {});
+  if (chatWindow) {
+    await chatWindow.close().catch(() => {});
+  } else {
+    await manager.destroy().catch(() => {});
+  }
   process.exit(code);
 }
 
@@ -478,5 +550,5 @@ server.start({
 });
 
 console.error(
-  `[humanwire-mcp] v0.5.0 started on stdio (transport: ${config.defaultTransport}, identity: ${config.stateFilePath ? 'persistent' : 'ephemeral'})`
+  `[humanwire-mcp] v0.5.1 started on stdio (transport: ${config.defaultTransport}, identity: ${config.stateFilePath ? 'persistent' : 'ephemeral'})`
 );

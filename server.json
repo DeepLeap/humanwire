@@ -1,6 +1,6 @@
 {
   "name": "io.github.DeepLeap/humanwire",
-  "description": "Zero-dependency encrypted MCP server for connecting AI clients across machines via room codes, a 24h public plaza, or topic matching.",
+  "description": "Find people to chat with via topic-based 1:1 matching. MCP server on npm.",
   "repository": {
     "url": "https://github.com/DeepLeap/humanwire",
     "source": "github"
@@ -19,8 +19,8 @@
           "description": "Install and run humanwire-mcp",
           "is_required": true,
           "format": "string",
-          "value": "-y humanwire-mcp",
-          "default": "-y humanwire-mcp"
+          "value": "-y humanwire-mcp@0.5.0",
+          "default": "-y humanwire-mcp@0.5.0"
         }
       ]
     }

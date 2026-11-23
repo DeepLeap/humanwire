@@ -41,6 +41,7 @@ import {
 import { SimpleMcpServer } from '../src/mcp-stdio.js';
 import { KIND_DEADDROP, KIND_PLAZA_POST } from '../src/transport-relay.js';
 import { createProxiedWebSocket, sanitizeProxyDisplay } from '../src/proxy-ws.js';
+import { startChatWindow } from '../src/chat-window.js';
 
 function createSocketPair() {
   const aToB = new PassThrough();
@@ -802,6 +803,85 @@ function createMockNostrRelayHub(urls) {
   };
 }
 
+test('聊天小窗：关键词相交才匹配，正文通过本地接口收发', async () => {
+  const relays = ['wss://test-relay'];
+  const hub = createMockNostrRelayHub(relays);
+  const makeManager = () => new P2PMatchManager({
+    relays,
+    webSocketFactory: hub.createFactory(),
+    powBits: 8,
+    displayOnly: true,
+  });
+  const alice = makeManager();
+  const bob = makeManager();
+  const unrelated = makeManager();
+  const windows = [];
+
+  function browserClient(window) {
+    const { origin, hash } = new URL(window.url);
+    const headers = {
+      'Authorization': `Bearer ${hash.slice(1)}`,
+      'Content-Type': 'application/json',
+    };
+    return async (route, payload, signal, expectedStatus = 200) => {
+      const response = await fetch(origin + route, {
+        headers,
+        signal,
+        ...(payload === undefined ? {} : { method: 'POST', body: JSON.stringify(payload) }),
+      });
+      assert.equal(response.status, expectedStatus);
+      return response.json();
+    };
+  }
+
+  try {
+    windows.push(await startChatWindow({ manager: alice }));
+    windows.push(await startChatWindow({ manager: bob }));
+    const origin = new URL(windows[0].url).origin;
+    assert.equal((await fetch(origin + '/api/poll')).status, 401);
+    const a = browserClient(windows[0]);
+    const b = browserClient(windows[1]);
+
+    const { sessionId } = await a('/api/join', { mode: 'match', nickname: '北岚', keyword: 'Ｃ４Ｄ，Redshift' });
+    await unrelated.startMatching({ keywords: 'rust, wasm' });
+    await waitUntil(() => hub.publishedLogs.some(({ event }) => event.kind === KIND_DEADDROP));
+    await waitUntil(() => alice.peers.size === 0 && unrelated.peers.size === 0);
+    assert.equal((await a('/api/poll')).mode, 'MATCHING_1V1');
+    assert.equal(unrelated.mode, 'MATCHING_1V1');
+
+    await b('/api/join', { mode: 'match', nickname: 'B', keyword: 'redshift, materials' });
+    await waitUntil(() => alice.mode === 'CONNECTED_1V1' && bob.mode === 'CONNECTED_1V1');
+    assert.equal((await a('/api/poll')).connected, true);
+    await b('/api/poll'); // Clear the initial match event before opening the background receive.
+    const abort = new AbortController();
+    const canceled = b('/api/poll?wait=20', undefined, abort.signal);
+    const canceledCheck = assert.rejects(canceled, { name: 'AbortError' });
+    await waitUntil(() => bob.inboxWaiters.length === 1);
+    abort.abort();
+    await canceledCheck;
+    await waitUntil(() => bob.inboxWaiters.length === 0);
+
+    const stale = await a('/api/send', { text: '上一场聊天的草稿', sessionId: 'old-session' }, undefined, 409);
+    assert.match(stale.error, /会话已切换/);
+    const pendingMessage = b('/api/poll?wait=20');
+    await waitUntil(() => bob.inboxWaiters.length === 1);
+    assert.deepEqual(await a('/api/send', { text: '你好，聊聊材质。', sessionId }), { ok: true });
+    // There are no further requests from B. The already open poll delivers the message.
+    const { events } = await pendingMessage;
+    assert.equal(events.filter((event) => event.type === 'message').length, 1);
+    const received = events.find((event) => event.type === 'message');
+    assert.deepEqual(received, {
+      type: 'message', nickname: '北岚', text: '你好，聊聊材质。', redacted: false,
+    });
+    assert.deepEqual(await b('/api/leave', {}), { ok: true });
+    assert.equal((await b('/api/poll')).mode, 'IDLE');
+  } finally {
+    await Promise.all(windows.map((window) => window.close()));
+    await unrelated.destroy();
+    hub.closeAll();
+  }
+});
+
 test('v0.4 零依赖密码学：BIP-340 官方向量 #0 与 NIP-01 事件签名校验', () => {
   // BIP-340 官方测试向量 #0
   const sk0 = Buffer.from('0000000000000000000000000000000000000000000000000000000000000003', 'hex');
@@ -1327,7 +1407,7 @@ test('v0.4.1 隐私优先默认入口：无参数启动默认一次性身份 + a
   const toolsRes = resps.find((r) => r.id === 2);
   const statusRes = JSON.parse(resps.find((r) => r.id === 3).result.content[0].text);
 
-  assert.equal(initRes.result.serverInfo.version, '0.5.0');
+  assert.equal(initRes.result.serverInfo.version, '0.5.1');
   const startTool = toolsRes.result.tools.find((t) => t.name === 'start_matching');
   const plazaTool = toolsRes.result.tools.find((t) => t.name === 'join_plaza');
   const roomTool = toolsRes.result.tools.find((t) => t.name === 'join_room');

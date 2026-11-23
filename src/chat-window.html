@@ -1,0 +1,663 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>HumanWire 聊天</title>
+<style>
+  :root {
+    color-scheme: dark;
+    font-family: system-ui, "Microsoft YaHei UI", sans-serif;
+    --bg: #141516;
+    --panel: #1b1c1e;
+    --line: #343639;
+    --text: #eeeef0;
+    --muted: #a9acb1;
+    --accent: #a9dac6;
+    --error: #ffaaa1;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--text); }
+  main {
+    width: min(100%, 42rem);
+    min-height: 100dvh;
+    margin: auto;
+    padding: 1.2rem clamp(.8rem, 4vw, 1.5rem);
+    display: flex;
+    flex-direction: column;
+    gap: .9rem;
+  }
+  header, .row, .translation, .session-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .55rem;
+  }
+  header { justify-content: space-between; }
+  h1 { margin: 0; font-size: 1.08rem; letter-spacing: .01em; }
+  .status { margin: 0; color: var(--muted); font-size: .82rem; display: flex; gap: .45rem; align-items: center; }
+  .status::before { content: ""; width: .42rem; height: .42rem; border-radius: 50%; background: currentColor; }
+  .status[data-connected="true"] { color: var(--accent); }
+  input, textarea, select, button { font: inherit; }
+  input, textarea, select {
+    min-width: 0;
+    border: 1px solid var(--line);
+    border-radius: .45rem;
+    background: var(--bg);
+    color: var(--text);
+    padding: .55rem .65rem;
+  }
+  button {
+    border: 1px solid var(--line);
+    border-radius: .45rem;
+    background: var(--panel);
+    color: var(--text);
+    padding: .5rem .65rem;
+    cursor: pointer;
+    min-height: 2rem;
+  }
+  button:hover:not(:disabled) { border-color: var(--muted); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #17251e; font-weight: 650; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .setup, .session-bar { border: 1px solid var(--line); padding: .7rem; border-radius: .6rem; background: var(--panel); }
+  .setup { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: .65rem; }
+  .setup label { display: grid; gap: .27rem; color: var(--muted); font-size: .82rem; }
+  .setup input, .setup select { width: 100%; color: var(--text); font-size: .9rem; }
+  .setup .primary { justify-self: end; align-self: end; }
+  .session-bar { justify-content: space-between; font-size: .84rem; }
+  .session-bar p { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  .translation { font-size: .78rem; color: var(--muted); }
+  .translation button, .translation select { font-size: inherit; padding: .3rem .48rem; }
+  #translation-status { flex: 1 1 9rem; }
+  .messages {
+    flex: 1;
+    min-height: 10rem;
+    height: min(61dvh, 35rem);
+    max-height: min(67dvh, 41rem);
+    overflow-y: auto;
+    padding: .1rem .2rem .2rem 0;
+    overscroll-behavior: contain;
+  }
+  .message { margin: 0 0 .73rem; padding: .22rem .45rem .22rem .72rem; overflow-wrap: anywhere; }
+  .incoming { border-inline-start: 2px solid #638475; }
+  .outgoing { border-inline-start: 2px solid #52555a; }
+  .message p { margin: 0; white-space: pre-wrap; font-size: .92rem; line-height: 1.55; }
+  .nickname { font-weight: 650; }
+  .incoming .nickname { color: var(--accent); }
+  .message .original { margin-top: .4rem; color: var(--muted); }
+  .message .text-button { margin-top: .28rem; padding: .12rem 0; border: 0; background: none; font-size: .77rem; color: var(--muted); min-height: auto; text-decoration: underline; }
+  .quiet, .event { color: var(--muted); font-size: .84rem; line-height: 1.5; }
+  .event { margin: .4rem 0 .7rem; padding-inline-start: .72rem; overflow-wrap: anywhere; }
+  .quiet { margin: .35rem 0 0; }
+  form.composer { display: flex; align-items: flex-end; gap: .55rem; }
+  .composer textarea { flex: 1; min-height: 2.65rem; max-height: 7rem; font-size: .91rem; resize: vertical; }
+  .composer button { min-height: 2.65rem; }
+  .feedback { margin: 0; color: var(--error); font-size: .82rem; overflow-wrap: anywhere; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  @media (max-width: 340px) {
+    .setup { grid-template-columns: minmax(0, 1fr); }
+    .setup .primary { justify-self: stretch; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>HumanWire</h1>
+    <p class="status" id="status" role="status">未连接</p>
+  </header>
+  <form id="join" class="setup">
+    <label>入口
+      <select id="mode">
+        <option value="match">找同好</option>
+        <option value="room">房间</option>
+      </select>
+    </label>
+    <label>昵称<input id="nickname" maxlength="32" placeholder="匿名用户" autocomplete="off"></label>
+    <label id="keyword-field">匹配关键词<input id="keyword" maxlength="256" placeholder="例如 C4D, Redshift" autocomplete="off"></label>
+    <label id="room-code-field" hidden>房间码<input id="room-code" maxlength="128" placeholder="留空创建房间" autocomplete="off"></label>
+    <button id="join-button" class="primary" type="submit">开始匹配</button>
+  </form>
+  <div id="session" class="session-bar" hidden>
+    <p id="session-label"></p>
+    <div class="row">
+      <button id="copy-code" type="button" hidden>复制房间码</button>
+      <button id="leave" type="button">结束</button>
+    </div>
+  </div>
+  <div class="translation">
+    <button id="enable-translation" type="button">启用本地翻译</button>
+    <label id="target-field" hidden>译为
+      <select id="target-language">
+        <option value="zh">简体中文</option>
+        <option value="zh-Hant">繁體中文</option>
+        <option value="en">English</option>
+        <option value="ja">日本語</option>
+        <option value="ko">한국어</option>
+        <option value="es">Español</option>
+        <option value="fr">Français</option>
+        <option value="de">Deutsch</option>
+        <option value="ru">Русский</option>
+      </select>
+    </label>
+    <span id="translation-status" role="status"></span>
+    <button id="message-reminders" type="button" aria-pressed="false" hidden>开启消息提醒</button>
+  </div>
+  <section id="messages" class="messages" role="log" aria-label="聊天消息" aria-live="polite">
+    <p id="empty" class="quiet">填入感兴趣的关键词，用逗号分隔；也可以凭房间码加入聊天。</p>
+  </section>
+  <p id="feedback" class="feedback" role="status" hidden></p>
+  <form id="composer" class="composer">
+    <label class="sr-only" for="draft">聊天消息</label>
+    <textarea id="draft" rows="1" maxlength="2000" placeholder="等待对方连接" disabled></textarea>
+    <button id="send" class="primary" type="submit" disabled>发送</button>
+  </form>
+</main>
+<script>
+  const byId = (id) => document.getElementById(id);
+  const join = byId('join');
+  const mode = byId('mode');
+  const keyword = byId('keyword');
+  const codeField = byId('room-code');
+  const nickname = byId('nickname');
+  const joinButton = byId('join-button');
+  const status = byId('status');
+  const feedback = byId('feedback');
+  const messages = byId('messages');
+  const empty = byId('empty');
+  const idleText = empty.textContent;
+  const draft = byId('draft');
+  const sendButton = byId('send');
+  const translationButton = byId('enable-translation');
+  const translationStatus = byId('translation-status');
+  const languageSelect = byId('target-language');
+  const remindersButton = byId('message-reminders');
+  const pageTitle = document.title;
+
+  const fragment = location.hash.slice(1);
+  let token = fragment;
+  try {
+    if (fragment) {
+      sessionStorage.setItem('humanwire-chat-token', fragment);
+      history.replaceState(null, '', location.pathname + location.search);
+    } else {
+      token = sessionStorage.getItem('humanwire-chat-token') || '';
+    }
+  } catch {
+    // The one-time link remains usable when session storage is unavailable.
+  }
+  let sessionId = null;
+  let sessionMode = 'IDLE';
+  let sessionLabel = '';
+  let inviteCode = '';
+  let connected = false;
+  let relays = 0;
+  let busy = false;
+  let sending = false;
+  let blocked = !token;
+  let epoch = 0;
+  let pollController;
+  let retryTimer;
+  let retryDelay = 1000;
+  let pollError = '';
+  let unread = 0;
+  const canNotify = typeof globalThis.Notification?.requestPermission === 'function';
+  let remindersEnabled = canNotify && Notification.permission === 'granted';
+  let detector;
+  const translators = new Map();
+  const incoming = [];
+
+  function showFeedback(message = '') {
+    feedback.textContent = message;
+    feedback.hidden = !message;
+  }
+
+  function updateView() {
+    const active = sessionMode !== 'IDLE';
+    join.hidden = active;
+    byId('session').hidden = !active;
+    byId('session-label').textContent = sessionLabel || '当前会话';
+    byId('copy-code').hidden = !inviteCode;
+    byId('leave').disabled = blocked || busy || sending;
+    joinButton.disabled = blocked || busy || sending;
+    draft.disabled = blocked || busy || !connected;
+    sendButton.disabled = draft.disabled || sending || !draft.value.trim();
+    draft.placeholder = connected ? '输入消息，按 Enter 发送' : '等待对方连接';
+    status.dataset.connected = String(connected && !blocked);
+    status.textContent = blocked ? '本地连接不可用' : busy ? '处理中…' : connected
+      ? '对方已连接'
+      : active ? (sessionMode === 'MATCHING_1V1' ? '匹配中' : '等待对方') : '未连接';
+    if (active && !blocked) status.textContent += ` · ${relays} 个中继`;
+  }
+
+  async function request(path, data, signal) {
+    const response = await fetch(path, {
+      method: data === undefined ? 'GET' : 'POST',
+      headers: { Authorization: `Bearer ${token}`, ...(data === undefined ? {} : { 'Content-Type': 'application/json' }) },
+      body: data === undefined ? undefined : JSON.stringify(data),
+      cache: 'no-store',
+      signal,
+    });
+    signal?.throwIfAborted();
+    if (response.status === 401 || response.status === 403) {
+      blocked = true;
+      updateView();
+      throw new Error('本地窗口链接已失效，请重新打开 HumanWire。');
+    }
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || '操作未完成，请重试。');
+    return result;
+  }
+
+  function append(node) {
+    const atBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 40;
+    empty.hidden = true;
+    messages.append(node);
+    if (atBottom) messages.scrollTop = messages.scrollHeight;
+  }
+
+  function clearMessages() {
+    incoming.length = 0;
+    messages.replaceChildren(empty);
+    empty.hidden = false;
+    clearUnread();
+  }
+
+  function clearUnread() {
+    unread = 0;
+    document.title = pageTitle;
+  }
+
+  function resetSessionView(nextSessionId) {
+    sessionId = nextSessionId;
+    sessionLabel = '';
+    inviteCode = '';
+    codeField.value = '';
+    byId('copy-code').textContent = '复制房间码';
+    draft.value = '';
+    clearMessages();
+    empty.textContent = sessionMode === 'IDLE' ? idleText : '还没有聊天消息。';
+  }
+
+  function updateReminderButton() {
+    const permissionDenied = canNotify && Notification.permission === 'denied';
+    remindersButton.hidden = !canNotify;
+    remindersButton.disabled = permissionDenied;
+    remindersButton.setAttribute('aria-pressed', String(remindersEnabled && !permissionDenied));
+    remindersButton.textContent = permissionDenied ? '浏览器已关闭消息提醒'
+      : remindersEnabled ? '关闭消息提醒' : '开启消息提醒';
+  }
+
+  function notifyIncoming(count) {
+    if (!count || (!document.hidden && document.hasFocus())) return;
+    unread += count;
+    document.title = `(${unread}) ${pageTitle}`;
+    if (!remindersEnabled || Notification.permission !== 'granted') return;
+    try {
+      const notice = new Notification('HumanWire 有新消息', {
+        body: `你有 ${unread} 条未读消息。`,
+        tag: 'humanwire-new-message',
+      });
+      notice.onclick = () => {
+        window.focus();
+        notice.close();
+      };
+    } catch {
+      // Window title still shows unread messages where desktop notifications are unavailable.
+    }
+  }
+
+  function addEvent(text) {
+    if (typeof text !== 'string' || !text.trim()) return;
+    const node = document.createElement('p');
+    node.className = 'event';
+    node.textContent = text;
+    append(node);
+  }
+
+  function addMessage(event, outgoing = false) {
+    if (typeof event.text !== 'string') return;
+    const node = document.createElement('article');
+    node.className = `message ${outgoing ? 'outgoing' : 'incoming'}`;
+    const paragraph = document.createElement('p');
+    const label = document.createElement('span');
+    label.className = 'nickname';
+    label.textContent = `${outgoing ? '我' : event.nickname || '匿名用户'}：`;
+    const text = document.createElement('span');
+    text.textContent = !outgoing && detector ? '正在翻译…' : event.text;
+    paragraph.append(label, text);
+    node.append(paragraph);
+    if (event.redacted) {
+      const note = document.createElement('p');
+      note.className = 'quiet';
+      note.textContent = '内容含已隐藏的片段';
+      node.append(note);
+    }
+    append(node);
+    if (!outgoing) {
+      const message = { node, text, original: event.text, revision: 0 };
+      incoming.push(message);
+      void translateMessage(message);
+    }
+  }
+
+  function setModeFields() {
+    const matching = mode.value === 'match';
+    byId('keyword-field').hidden = !matching;
+    byId('room-code-field').hidden = matching;
+    joinButton.textContent = matching ? '开始匹配' : '进入房间';
+  }
+
+  async function poll(wait = 20) {
+    if (busy || blocked || pollController) return;
+    const revision = epoch;
+    const controller = new AbortController();
+    pollController = controller;
+    let failed = false;
+    try {
+      const state = await request(`/api/poll?wait=${wait}`, undefined, controller.signal);
+      if (revision !== epoch || controller.signal.aborted) return;
+      if (pollError && feedback.textContent === pollError) showFeedback();
+      pollError = '';
+      retryDelay = 1000;
+      sessionMode = state.mode || 'IDLE';
+      const nextSessionId = state.sessionId ?? null;
+      if (nextSessionId !== sessionId) {
+        resetSessionView(nextSessionId);
+        showFeedback();
+      }
+      connected = Boolean(state.connected);
+      relays = Number(state.relayCount) || 0;
+      let count = 0;
+      for (const event of state.events || []) {
+        if (event.type === 'message' && typeof event.text === 'string') {
+          addMessage(event);
+          count++;
+        }
+        if (event.type === 'state') addEvent(event.text);
+      }
+      notifyIncoming(count);
+      updateView();
+    } catch (error) {
+      if (revision !== epoch || controller.signal.aborted) return;
+      failed = true;
+      connected = false;
+      updateView();
+      pollError = error.message;
+      showFeedback(pollError);
+    } finally {
+      if (pollController === controller) pollController = null;
+      if (revision === epoch && !controller.signal.aborted && !busy && !blocked) {
+        if (failed) {
+          retryTimer = setTimeout(poll, retryDelay);
+          retryDelay = Math.min(retryDelay * 2, 10000);
+        } else {
+          void poll();
+        }
+      }
+    }
+  }
+
+  async function changeSession(callback) {
+    if (busy || sending || blocked) return;
+    busy = true;
+    epoch++;
+    clearTimeout(retryTimer);
+    pollController?.abort();
+    pollController = null;
+    showFeedback();
+    updateView();
+    try {
+      await callback();
+    } catch (error) {
+      showFeedback(error.message);
+    } finally {
+      busy = false;
+      updateView();
+      void poll(0);
+    }
+  }
+
+  remindersButton.addEventListener('click', async () => {
+    if (remindersEnabled) {
+      remindersEnabled = false;
+    } else {
+      remindersButton.disabled = true;
+      try {
+        remindersEnabled = await Notification.requestPermission() === 'granted';
+      } catch {
+        remindersEnabled = false;
+      }
+    }
+    updateReminderButton();
+  });
+  window.addEventListener('focus', clearUnread);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && document.hasFocus()) clearUnread();
+  });
+
+  mode.addEventListener('change', setModeFields);
+  join.addEventListener('submit', (event) => {
+    event.preventDefault();
+    void changeSession(async () => {
+      const match = mode.value === 'match';
+      const terms = match ? keyword.value.trim() : '';
+      const requestedRoomCode = match ? '' : codeField.value.trim();
+      const result = await request('/api/join', {
+        mode: mode.value,
+        keyword: terms,
+        roomCode: requestedRoomCode,
+        nickname: nickname.value.trim(),
+      });
+      sessionMode = result.mode || (match ? 'MATCHING_1V1' : 'GROUP_ROOM');
+      resetSessionView(result.sessionId ?? null);
+      inviteCode = result.roomCode || requestedRoomCode;
+      sessionLabel = match ? (terms ? `同好匹配 · ${terms}` : '闲聊匹配') : `房间 · ${inviteCode}`;
+      relays = Number(result.relayCount) || 0;
+      connected = false;
+      empty.textContent = match ? (terms ? '正在寻找关键词有交集的人。' : '正在找愿意闲聊的人。') : '把房间码发给朋友，在这里等对方加入。';
+    });
+  });
+  byId('leave').addEventListener('click', () => {
+    void changeSession(async () => {
+      await request('/api/leave', {});
+      sessionMode = 'IDLE';
+      connected = false;
+      resetSessionView(null);
+    });
+  });
+  byId('copy-code').addEventListener('click', async () => {
+    const copiedSession = sessionId;
+    try {
+      await navigator.clipboard.writeText(inviteCode);
+      if (copiedSession !== sessionId) return;
+      byId('copy-code').textContent = '已复制';
+      setTimeout(() => {
+        if (copiedSession === sessionId) byId('copy-code').textContent = '复制房间码';
+      }, 1400);
+    } catch {
+      if (copiedSession === sessionId) showFeedback('无法访问剪贴板，可以选中并复制上方的房间码。');
+    }
+  });
+  draft.addEventListener('input', updateView);
+  draft.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
+      event.preventDefault();
+      byId('composer').requestSubmit();
+    }
+  });
+  byId('composer').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (busy || sending || blocked || !connected) return;
+    const entered = draft.value;
+    const text = entered.trim().replace(/^\/[ \t]*/, '').trim();
+    if (!text) return;
+    const sentSession = sessionId;
+    sending = true;
+    showFeedback();
+    updateView();
+    try {
+      const result = await request('/api/send', { text, sessionId: sentSession });
+      if (sentSession !== sessionId) return;
+      addMessage({ text: result.text || text }, true);
+      if (draft.value === entered) draft.value = '';
+    } catch (error) {
+      if (sentSession === sessionId) showFeedback(error.message);
+    } finally {
+      sending = false;
+      updateView();
+      if (connected) draft.focus();
+    }
+  });
+
+  function languageCode(tag) {
+    const lower = tag.toLowerCase();
+    if (/^zh-(hant|tw|hk|mo)(-|$)/.test(lower)) return 'zh-Hant';
+    return lower.split('-')[0];
+  }
+
+  function applyTranslation(message, translated) {
+    message.text.textContent = translated;
+    if (translated === message.original) return;
+    const original = document.createElement('p');
+    original.className = 'original';
+    original.hidden = true;
+    original.textContent = message.original;
+    const toggle = document.createElement('button');
+    toggle.className = 'text-button';
+    toggle.type = 'button';
+    toggle.textContent = '查看原文';
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.addEventListener('click', () => {
+      original.hidden = !original.hidden;
+      toggle.textContent = original.hidden ? '查看原文' : '收起原文';
+      toggle.setAttribute('aria-expanded', String(!original.hidden));
+    });
+    message.node.append(toggle, original);
+    message.controls = [toggle, original];
+  }
+
+  async function translateMessage(message) {
+    const revision = ++message.revision;
+    message.controls?.forEach((node) => node.remove());
+    message.controls = [];
+    const showOriginal = () => { message.text.textContent = message.original; };
+    if (!detector || !message.original.trim()) {
+      showOriginal();
+      return;
+    }
+    message.text.textContent = '正在翻译…';
+    const isCurrent = () => message.revision === revision && message.node.isConnected;
+    const targetLanguage = languageSelect.value;
+    try {
+      const [likely] = await detector.detect(message.original);
+      if (!isCurrent()) return;
+      if (!likely || likely.confidence < .5) {
+        showOriginal();
+        return;
+      }
+      const sourceLanguage = languageCode(likely.detectedLanguage);
+      if (sourceLanguage === targetLanguage) {
+        showOriginal();
+        return;
+      }
+      const options = { sourceLanguage, targetLanguage };
+      const key = `${sourceLanguage}:${targetLanguage}`;
+      const translate = async (translatorPromise) => {
+        const translator = await translatorPromise;
+        const translated = await translator.translate(message.original);
+        if (isCurrent()) applyTranslation(message, translated);
+      };
+      if (translators.has(key)) {
+        await translate(translators.get(key));
+        return;
+      }
+      const availability = await Translator.availability(options);
+      if (!isCurrent()) return;
+      if (availability === 'unavailable') {
+        showOriginal();
+        translationStatus.textContent = '当前语言对不可用，显示原文。';
+        return;
+      }
+      if (availability === 'available') {
+        const pending = Translator.create(options);
+        translators.set(key, pending);
+        try { await translate(pending); } catch (error) { translators.delete(key); throw error; }
+        return;
+      }
+      const download = document.createElement('button');
+      showOriginal();
+      download.type = 'button';
+      download.className = 'text-button';
+      download.textContent = '下载本地译文语言包';
+      message.controls = [download];
+      message.node.append(download);
+      download.addEventListener('click', async () => {
+        download.disabled = true;
+        download.textContent = '下载中…';
+        try {
+          const pending = translators.get(key) || Translator.create(options);
+          translators.set(key, pending);
+          await pending;
+          for (const item of incoming) void translateMessage(item);
+        } catch {
+          translators.delete(key);
+          if (isCurrent()) {
+            download.disabled = false;
+            download.textContent = '重试下载语言包';
+            translationStatus.textContent = '语言包下载失败，显示原文。';
+          }
+        }
+      });
+    } catch {
+      if (isCurrent()) {
+        showOriginal();
+        translationStatus.textContent = '本地翻译暂不可用，显示原文。';
+      }
+    }
+  }
+
+  const preferred = languageCode(navigator.language || 'zh');
+  if ([...languageSelect.options].some((option) => option.value === preferred)) languageSelect.value = preferred;
+  if (!('LanguageDetector' in globalThis) || !('Translator' in globalThis)) {
+    translationButton.hidden = true;
+    translationStatus.textContent = '当前浏览器不支持本地翻译，显示原文。';
+  } else {
+    async function enableTranslation() {
+      if (detector || translationButton.disabled) return;
+      translationButton.disabled = true;
+      translationStatus.textContent = '正在准备本地语言识别…';
+      try {
+        detector = await LanguageDetector.create();
+        translationButton.hidden = true;
+        byId('target-field').hidden = false;
+        translationStatus.textContent = '本地翻译已启用';
+        for (const message of incoming) void translateMessage(message);
+      } catch {
+        translationButton.disabled = false;
+        translationStatus.textContent = '本地翻译暂不可用，显示原文。';
+      }
+    }
+    translationButton.addEventListener('click', enableTranslation);
+    if (typeof LanguageDetector.availability === 'function') {
+      LanguageDetector.availability().then((state) => {
+        if (state === 'available') void enableTranslation();
+      }).catch(() => {});
+    }
+    languageSelect.addEventListener('change', () => {
+      translationStatus.textContent = '本地翻译已启用';
+      for (const message of incoming) void translateMessage(message);
+    });
+  }
+
+  setModeFields();
+  updateReminderButton();
+  updateView();
+  if (token) void poll(0);
+  else showFeedback('请通过 HumanWire 提供的本地链接打开此窗口。');
+</script>
+</body>
+</html>

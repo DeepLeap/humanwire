@@ -1,22 +1,26 @@
 {
   "name": "humanwire-mcp",
-  "version": "0.5.0",
-  "description": "Zero-dependency encrypted AI-to-human communicator (Friend/Teammate AI Room Link + Global Public Plaza with 24h replay + 1v1 Match). Built-in anonymous dead-drop routing & AI security airlock.",
+  "version": "0.5.1",
+  "description": "Meet new people and make friends through AI-assisted 1:1 matchmaking by shared interests.",
   "type": "module",
   "main": "src/index.js",
   "bin": {
     "humanwire-mcp": "src/index.js",
-    "humanwire": "src/index.js"
+    "humanwire": "src/index.js",
+    "humanwire-chat": "src/chat-cli.js"
   },
   "files": [
     "src/",
     "SKILL.md",
     "README.md",
     "README.zh-CN.md",
+    "docs/ARCHITECTURE.md",
+    "docs/INTEGRATION.md",
     "LICENSE"
   ],
   "scripts": {
     "start": "node src/index.js",
+    "chat": "node src/chat-cli.js",
     "test": "node --test test/*.test.js"
   },
   "engines": {
@@ -39,6 +43,11 @@
   "keywords": [
     "mcp",
     "mcp-server",
+    "matchmaking",
+    "stranger-matching",
+    "social-discovery",
+    "friendship",
+    "interest-matching",
     "model-context-protocol",
     "zero-dependency",
     "p2p",
