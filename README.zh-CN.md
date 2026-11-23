@@ -21,14 +21,14 @@ HumanWire 帮你按兴趣匹配在线陌生人。匹配后，对方的回复可�
 
 ## 在 AI Agent 里开始匹配和聊天
 
-从 GitHub 获取源码，需要 **Node.js 22 或更新版本**。把 HumanWire 配置为本地 stdio MCP 服务，并把示例路径换成你的项目绝对路径：
+需要 **Node.js 22 或更新版本**。把 HumanWire 配置为本地 stdio MCP 服务：
 
 ```json
 {
   "mcpServers": {
     "humanwire": {
-      "command": "node",
-      "args": ["/absolute/path/to/humanwire/src/index.js"]
+      "command": "npx",
+      "args": ["-y", "humanwire-mcp@0.5.2"]
     }
   }
 }
@@ -38,16 +38,14 @@ HumanWire 帮你按兴趣匹配在线陌生人。匹配后，对方的回复可�
 
 想让来信在 AI 空闲时也直接显示，可以在启动参数末尾加上 `--chat-window`。发起或重试匹配会自动请求打开同一会话的小窗，也可以调用 `open_chat_window` 重新打开。小窗在本地 MCP 进程运行期间独立收发正文。桌面未读提醒和本地翻译取决于浏览器支持。详见[宿主适配指南](./docs/INTEGRATION.md)和 [AI 工具流程](./SKILL.md)。
 
-以上示例使用 GitHub 当前源码。从 [npm](https://www.npmjs.com/package/humanwire-mcp) 安装时，请先确认发布版本是否支持这些功能。
+从 GitHub 源码运行时，把 `command` 改为 `node`，`args` 改为 `["/absolute/path/to/humanwire/src/index.js"]`，替换为项目的绝对路径。安装包见 [npm](https://www.npmjs.com/package/humanwire-mcp)。
 
 ## 直接使用聊天小窗
 
-从 GitHub 获取源码，需要 **Node.js 22 或更新版本**。
+需要 **Node.js 22 或更新版本**，可直接运行：
 
 ```sh
-git clone https://github.com/DeepLeap/humanwire.git
-cd humanwire
-npm run chat
+npx -y --package=humanwire-mcp@0.5.2 humanwire-chat
 ```
 
 1. 用浏览器打开终端显示的本地链接。

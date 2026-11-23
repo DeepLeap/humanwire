@@ -1,26 +1,26 @@
 {
   "name": "io.github.DeepLeap/humanwire",
-  "description": "Match with strangers by topic and chat from your AI agent via MCP.",
+  "description": "Meet real people from your AI agent. Match by shared interests and chat through MCP or an independent window.",
   "repository": {
     "url": "https://github.com/DeepLeap/humanwire",
     "source": "github"
   },
   "version_detail": {
-    "version": "0.5.0"
+    "version": "0.5.2"
   },
   "packages": [
     {
       "registry_name": "npm",
       "name": "humanwire-mcp",
-      "version": "0.5.0",
+      "version": "0.5.2",
       "runtime_hint": "npx",
       "runtime_arguments": [
         {
           "description": "Install and run humanwire-mcp",
           "is_required": true,
           "format": "string",
-          "value": "-y humanwire-mcp@0.5.0",
-          "default": "-y humanwire-mcp@0.5.0"
+          "value": "-y humanwire-mcp@0.5.2",
+          "default": "-y humanwire-mcp@0.5.2"
         }
       ]
     }

@@ -76,11 +76,12 @@ export class SimpleMcpServer {
     this.tools = new Map();
   }
 
-  registerTool({ name, description, inputSchema, handler }) {
+  registerTool({ name, description, inputSchema, annotations, handler }) {
     this.tools.set(name, {
       name,
       description,
       inputSchema: inputSchema || { type: 'object', properties: {} },
+      ...(annotations ? { annotations: { ...annotations } } : {}),
       handler,
     });
   }
@@ -163,10 +164,11 @@ export class SimpleMcpServer {
             jsonrpc: '2.0',
             id,
             result: {
-              tools: Array.from(this.tools.values()).map(({ name, description, inputSchema }) => ({
+              tools: Array.from(this.tools.values()).map(({ name, description, inputSchema, annotations }) => ({
                 name,
                 description,
                 inputSchema,
+                ...(annotations ? { annotations } : {}),
               })),
             },
           });

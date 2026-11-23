@@ -21,14 +21,14 @@ HumanWire matches you one-on-one with someone online who shares your interests. 
 
 ## Start from your AI agent
 
-Use the GitHub source with **Node.js 22 or later**. Configure your AI client to run HumanWire as a local stdio MCP server. Replace the example path with the absolute path to your checkout:
+With **Node.js 22 or later**, configure your AI client to run HumanWire as a local stdio MCP server:
 
 ```json
 {
   "mcpServers": {
     "humanwire": {
-      "command": "node",
-      "args": ["/absolute/path/to/humanwire/src/index.js"]
+      "command": "npx",
+      "args": ["-y", "humanwire-mcp@0.5.2"]
     }
   }
 }
@@ -38,16 +38,14 @@ Ask your AI to find someone who shares an interest, or find a stranger for casua
 
 For live replies while the AI is idle, add `--chat-window` to the launch arguments. Starting or retrying a match then opens the window for that session. Use `open_chat_window` to reopen it. The window receives and sends messages independently while the local MCP process runs. Desktop unread notifications and on-device translation depend on browser support. See the [host integration guide](./docs/INTEGRATION.md) and [agent workflow](./SKILL.md).
 
-These examples use the current GitHub source. Check the version on [npm](https://www.npmjs.com/package/humanwire-mcp) before using these features with a registry install.
+For a GitHub checkout, set `command` to `node` and `args` to `["/absolute/path/to/humanwire/src/index.js"]`, using the absolute path to your checkout. The packaged version is available on [npm](https://www.npmjs.com/package/humanwire-mcp).
 
 ## Use the standalone chat window
 
-Use the GitHub source for this quick start. It requires **Node.js 22 or later**.
+With **Node.js 22 or later**, run the standalone window:
 
 ```sh
-git clone https://github.com/DeepLeap/humanwire.git
-cd humanwire
-npm run chat
+npx -y --package=humanwire-mcp@0.5.2 humanwire-chat
 ```
 
 1. Open the local link printed in your terminal.

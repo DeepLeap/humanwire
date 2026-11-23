@@ -1,6 +1,6 @@
 {
   "name": "humanwire-mcp",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Meet and talk to real people from your AI agent chat. Match with strangers by shared interests via MCP.",
   "type": "module",
   "main": "src/index.js",
