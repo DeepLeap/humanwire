@@ -91,7 +91,7 @@
   .message .text-button { margin-top: .28rem; padding: .12rem 0; border: 0; background: none; font-size: .77rem; color: var(--muted); min-height: auto; text-decoration: underline; }
   .quiet, .event { color: var(--muted); font-size: .84rem; line-height: 1.5; }
   .event { margin: .4rem 0 .7rem; padding-inline-start: .72rem; overflow-wrap: anywhere; }
-  .quiet { margin: .35rem 0 0; }
+  .quiet { margin: .35rem 0 0; overflow-wrap: anywhere; }
   form.composer { display: flex; align-items: flex-end; gap: .55rem; }
   .composer textarea { flex: 1; min-height: 2.65rem; max-height: 7rem; font-size: .91rem; resize: vertical; }
   .composer button { min-height: 2.65rem; }
@@ -118,6 +118,7 @@
     </label>
     <label>昵称<input id="nickname" maxlength="32" placeholder="匿名用户" autocomplete="off"></label>
     <label id="keyword-field">匹配关键词<input id="keyword" maxlength="256" placeholder="例如 个人网站, 前端开发" autocomplete="off"></label>
+    <label id="purpose-field">公开介绍（选填）<input id="purpose" maxlength="120" placeholder="例如 在做个人网站，想聊移动端排版" autocomplete="off"></label>
     <label id="room-code-field" hidden>房间码<input id="room-code" maxlength="128" placeholder="留空创建房间" autocomplete="off"></label>
     <button id="join-button" class="primary" type="submit">开始匹配</button>
   </form>
@@ -125,9 +126,11 @@
     <p id="session-label"></p>
     <div class="row">
       <button id="copy-code" type="button" hidden>复制房间码</button>
+      <button id="retry" type="button" hidden>再找一位</button>
       <button id="leave" type="button">结束</button>
     </div>
   </div>
+  <p id="match-info" class="quiet" hidden></p>
   <div class="translation">
     <button id="enable-translation" type="button">启用本地翻译</button>
     <label id="target-field" hidden>译为
@@ -161,6 +164,7 @@
   const join = byId('join');
   const mode = byId('mode');
   const keyword = byId('keyword');
+  const purpose = byId('purpose');
   const codeField = byId('room-code');
   const nickname = byId('nickname');
   const joinButton = byId('join-button');
@@ -195,6 +199,10 @@
   let inviteCode = '';
   let connected = false;
   let relays = 0;
+  let matching = null;
+  let cursor = 0;
+  let initialReplay = true;
+  let seenIds = new Set();
   let busy = false;
   let sending = false;
   let blocked = !token;
@@ -216,12 +224,16 @@
   }
 
   function updateView() {
-    const active = sessionMode !== 'IDLE';
+    const active = sessionMode !== 'IDLE' || Boolean(matching?.canRetry);
     join.hidden = active;
     byId('session').hidden = !active;
     byId('session-label').textContent = sessionLabel || '当前会话';
     byId('copy-code').hidden = !inviteCode;
+    byId('retry').hidden = !matching?.canRetry || connected;
+    byId('retry').disabled = blocked || busy || sending;
+    byId('retry').textContent = matching?.state === 'timed_out' ? '继续匹配' : '再找一位';
     byId('leave').disabled = blocked || busy || sending;
+    byId('leave').textContent = matching?.state === 'waiting' || matching?.state === 'timed_out' ? '取消匹配' : '结束';
     joinButton.disabled = blocked || busy || sending;
     draft.disabled = blocked || busy || !connected;
     sendButton.disabled = draft.disabled || sending || !draft.value.trim();
@@ -229,6 +241,8 @@
     status.dataset.connected = String(connected && !blocked);
     status.textContent = blocked ? '本地连接不可用' : busy ? '处理中…' : connected
       ? '对方已连接'
+      : matching?.state === 'timed_out' ? '暂未找到匹配'
+      : matching?.state === 'ended' ? '对方已离开'
       : active ? (sessionMode === 'MATCHING_1V1' ? '匹配中' : '等待对方') : '未连接';
     if (active && !blocked) status.textContent += ` · ${relays} 个中继`;
   }
@@ -273,12 +287,17 @@
 
   function resetSessionView(nextSessionId) {
     sessionId = nextSessionId;
+    cursor = 0;
+    initialReplay = true;
+    seenIds = new Set();
     sessionLabel = '';
     inviteCode = '';
     codeField.value = '';
     byId('copy-code').textContent = '复制房间码';
     draft.value = '';
     clearMessages();
+    byId('match-info').hidden = true;
+    byId('match-info').textContent = '';
     empty.textContent = sessionMode === 'IDLE' ? idleText : '还没有聊天消息。';
   }
 
@@ -337,9 +356,11 @@
       node.append(note);
     }
     append(node);
+    while (messages.children.length > 201) messages.children[1].remove();
     if (!outgoing) {
       const message = { node, text, original: event.text, revision: 0 };
       incoming.push(message);
+      while (incoming.length > 200) incoming.shift();
       void translateMessage(message);
     }
   }
@@ -347,6 +368,7 @@
   function setModeFields() {
     const matching = mode.value === 'match';
     byId('keyword-field').hidden = !matching;
+    byId('purpose-field').hidden = !matching;
     byId('room-code-field').hidden = matching;
     joinButton.textContent = matching ? '开始匹配' : '进入房间';
   }
@@ -358,7 +380,9 @@
     pollController = controller;
     let failed = false;
     try {
-      const state = await request(`/api/poll?wait=${wait}`, undefined, controller.signal);
+      const params = new URLSearchParams({ wait: String(wait), after: String(cursor) });
+      if (sessionId) params.set('sessionId', sessionId);
+      const state = await request(`/api/poll?${params}`, undefined, controller.signal);
       if (revision !== epoch || controller.signal.aborted) return;
       if (pollError && feedback.textContent === pollError) showFeedback();
       pollError = '';
@@ -368,18 +392,43 @@
       if (nextSessionId !== sessionId) {
         resetSessionView(nextSessionId);
         showFeedback();
+        if (state.publicProfile && nextSessionId) {
+          nickname.value = state.publicProfile.nickname || '';
+          keyword.value = state.publicProfile.keywords?.join(', ') || '';
+          purpose.value = state.publicProfile.purpose || '';
+        }
       }
+      if (state.reset && nextSessionId === sessionId && cursor !== 0) {
+        clearMessages();
+        seenIds = new Set();
+      }
+      matching = state.matching || null;
+      if (matching?.keywords?.length) {
+        sessionLabel = `同好匹配 · ${matching.keywords.join(', ')}`;
+      }
+      const peer = state.peer;
+      const parts = [];
+      if (peer?.commonKeywords?.length) parts.push(`共同话题：${peer.commonKeywords.join('、')}`);
+      if (peer?.purpose) parts.push(`${peer.nickname || '对方'}：${peer.purpose}`);
+      if (peer?.language) parts.push(`语言：${peer.language}`);
+      byId('match-info').textContent = parts.join(' · ');
+      byId('match-info').hidden = parts.length === 0;
       connected = Boolean(state.connected);
       relays = Number(state.relayCount) || 0;
       let count = 0;
       for (const event of state.events || []) {
+        if (!Number.isSafeInteger(event.id) || seenIds.has(event.id)) continue;
+        seenIds.add(event.id);
         if (event.type === 'message' && typeof event.text === 'string') {
-          addMessage(event);
-          count++;
+          addMessage(event, Boolean(event.outgoing));
+          if (!event.outgoing) count++;
         }
         if (event.type === 'state') addEvent(event.text);
       }
-      notifyIncoming(count);
+      if (seenIds.size > 400) seenIds = new Set([...seenIds].slice(-200));
+      if (!initialReplay) notifyIncoming(count);
+      initialReplay = false;
+      cursor = state.cursor ?? cursor;
       updateView();
     } catch (error) {
       if (revision !== epoch || controller.signal.aborted) return;
@@ -451,9 +500,11 @@
         keyword: terms,
         roomCode: requestedRoomCode,
         nickname: nickname.value.trim(),
+        purpose: match ? purpose.value.trim() : '',
       });
       sessionMode = result.mode || (match ? 'MATCHING_1V1' : 'GROUP_ROOM');
       resetSessionView(result.sessionId ?? null);
+      matching = result.matching || null;
       inviteCode = result.roomCode || requestedRoomCode;
       sessionLabel = match ? (terms ? `同好匹配 · ${terms}` : '闲聊匹配') : `房间 · ${inviteCode}`;
       relays = Number(result.relayCount) || 0;
@@ -461,10 +512,21 @@
       empty.textContent = match ? (terms ? '正在寻找关键词有交集的人。' : '正在找愿意闲聊的人。') : '把房间码发给朋友，在这里等对方加入。';
     });
   });
+  byId('retry').addEventListener('click', () => {
+    void changeSession(async () => {
+      const result = await request('/api/retry', { sessionId });
+      sessionMode = result.mode || 'MATCHING_1V1';
+      resetSessionView(result.sessionId ?? null);
+      matching = result.matching || null;
+      connected = false;
+      empty.textContent = '正在找愿意聊这个话题的人。';
+    });
+  });
   byId('leave').addEventListener('click', () => {
     void changeSession(async () => {
-      await request('/api/leave', {});
+      await request('/api/leave', { sessionId });
       sessionMode = 'IDLE';
+      matching = null;
       connected = false;
       resetSessionView(null);
     });
@@ -500,10 +562,10 @@
     showFeedback();
     updateView();
     try {
-      const result = await request('/api/send', { text, sessionId: sentSession });
+      await request('/api/send', { text, sessionId: sentSession });
       if (sentSession !== sessionId) return;
-      addMessage({ text: result.text || text }, true);
       if (draft.value === entered) draft.value = '';
+      void poll(0);
     } catch (error) {
       if (sentSession === sessionId) showFeedback(error.message);
     } finally {

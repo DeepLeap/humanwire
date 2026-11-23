@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import { NostrRelaySwarm, DEFAULT_NOSTR_RELAYS } from './transport-relay.js';
 import { createHyperswarm } from './transport-p2p.js';
-import { encryptRelayPacket, decryptRelayPacket } from './nostr-crypto.js';
+import { encryptRelayPacket, decryptRelayPacket, deriveSecp256k1PrivKey, getPublicKey } from './nostr-crypto.js';
 import {
   scanIncomingMessage,
   wrapUntrustedMessage,
@@ -24,7 +24,6 @@ import { VouchManager, DEFAULT_VOUCH_POW_BITS } from './vouch.js';
 import {
   loadIdentityState,
   saveIdentityState,
-  deleteIdentityState,
 } from './identity.js';
 
 export const PROTOCOL_PREFIX = 'humanwire:v0.5';
@@ -34,6 +33,7 @@ const MAX_RELAY_IMAGE_BYTES = 400 * 1024; // 免费公共中继模式去元数�
 const MAX_P2P_IMAGE_BYTES = 2 * 1024 * 1024; // P2P 直连模式去元数据后上限 2MB
 const MAX_TEXT_CHARS = 2000;
 const MAX_INBOX_EVENTS = 200;
+const DEFAULT_MATCH_TIMEOUT_MS = 60_000;
 const RATE_WINDOW_MS = 3000;
 const RATE_MAX_MSGS = 5;
 const LOCK_TIMEOUT_MS = 5000;
@@ -215,6 +215,7 @@ export class P2PMatchManager {
     vouchPowBits = DEFAULT_VOUCH_POW_BITS,
     discoveryTimeoutMs = DISCOVERY_FLUSH_TIMEOUT_MS,
     displayOnly = false,
+    matchTimeoutMs = DEFAULT_MATCH_TIMEOUT_MS,
   } = {}) {
     this.defaultTransport = normalizeTransport(defaultTransport, 'relay');
     this.relays = relays;
@@ -228,11 +229,13 @@ export class P2PMatchManager {
     this.vouchPowBits = vouchPowBits;
     this.discoveryTimeoutMs = discoveryTimeoutMs;
     this.displayOnly = Boolean(displayOnly);
+    this.matchTimeoutMs = matchTimeoutMs;
 
     this.swarm = null;
     this.activeTransport = null;
     this.swarmSeedHex = null;
     this._stateLoaded = false;
+    this._stateLoadPromise = null;
     this._initPromise = null;
 
     this.mode = 'IDLE'; // IDLE | MATCHING_1V1 | CONNECTED_1V1 | GROUP_ROOM | PLAZA_ROOM
@@ -262,7 +265,15 @@ export class P2PMatchManager {
     this.peers = new Map();
     this.inbox = [];
     this.inboxWaiters = [];
+    this.displayEvents = [];
+    this.displayCursor = 0;
+    this.matchTimer = null;
+    this.matchExpiresAt = null;
+    this.matchState = null;
+    this.lastMatchOptions = null;
     this.blockedPubkeys = new Set();
+    this.blocklistQueue = Promise.resolve();
+    this.identityWriteQueue = Promise.resolve();
 
     this.imageVault = new EphemeralImageVault();
     this.vouchManager = new VouchManager({ vouchPowBits: this.vouchPowBits });
@@ -270,7 +281,11 @@ export class P2PMatchManager {
 
   async preloadState() {
     if (this._stateLoaded) return;
-    this._stateLoaded = true;
+    if (!this._stateLoadPromise) this._stateLoadPromise = this._loadState();
+    await this._stateLoadPromise;
+  }
+
+  async _loadState() {
     const saved = this.stateFilePath ? await loadIdentityState(this.stateFilePath) : null;
     if (saved) {
       this.swarmSeedHex = saved.swarmSeedHex;
@@ -281,6 +296,7 @@ export class P2PMatchManager {
             ...saved.vouchState,
             vouchPowBits: this.vouchPowBits,
           });
+          this._stateLoaded = true;
           return;
         } catch {
           // 密钥损坏时安全重建
@@ -294,6 +310,7 @@ export class P2PMatchManager {
         await this._saveIdentityStateSafe();
       }
     }
+    this._stateLoaded = true;
   }
 
   async ensureSwarm(transport = this.defaultTransport) {
@@ -385,8 +402,16 @@ export class P2PMatchManager {
         nickname: p.nickname,
         verifiedVouches: p.verifiedVouches || 0,
         intentCard: p.intentCard,
+        commonKeywords: p.commonKeywords || [],
       })),
       unreadMessages: this.inbox.length,
+      matching: this.matchState && {
+        state: this.matchState,
+        keywords: this.matchKeywords,
+        channel: this.channel || this.lastMatchOptions?.channel || 'chat/casual',
+        expiresAt: this.matchExpiresAt,
+        canRetry: this.matchState === 'ended' || this.matchState === 'timed_out',
+      },
       blockedCount: this.blockedPubkeys.size,
     };
 
@@ -405,7 +430,11 @@ export class P2PMatchManager {
     powBits = this.powBits,
     transport = this.defaultTransport,
     allowIpExposure = false,
+    timeoutSeconds,
   }) {
+    if (timeoutSeconds !== undefined && (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 600)) {
+      throw new Error('匹配等待时间须为 1 至 600 秒。');
+    }
     const targetTransport = normalizeTransport(transport, this.defaultTransport);
     this._assertTransportPrivacy(targetTransport, allowIpExposure);
     const safeChannel = sanitizeUntrustedField(channel || 'chat/casual', 64) || 'chat/casual';
@@ -424,18 +453,44 @@ export class P2PMatchManager {
     this.lobbyScope = matchKeywords ? KEYWORD_LOBBY_SCOPE : `lobby:${safeChannel}`;
     this.matchKeywords = matchKeywords;
     this.nickname = safeNickname;
-    this.intentCard = matchKeywords ? null : sanitizeIntentCard(intentCard) || {};
+    this.intentCard = sanitizeIntentCard(intentCard) || {};
+    this.lastMatchOptions = {
+      channel: safeChannel,
+      keywords: matchKeywords?.join(','),
+      nickname: safeNickname,
+      intentCard: { ...this.intentCard },
+      minVouches,
+      powBits,
+      transport: targetTransport,
+      allowIpExposure,
+      timeoutSeconds,
+    };
+    this.matchState = 'waiting';
+    const matchingSession = this.sessionId;
     this.minVouchesRequired = Math.max(0, minVouches);
     this.maxPeers = 1;
     this.powBits = powBits;
 
     await this._refreshPoW();
+    if (this.sessionId !== matchingSession || this.mode !== 'MATCHING_1V1') throw new Error('匹配已取消。');
     this._startPoWRefreshTimer();
 
     this.lobbyTopic = sha256(`${PROTOCOL_PREFIX}:${this.lobbyScope}`);
     const discovery = this.swarm.join(this.lobbyTopic, { server: true, client: true });
     this._notifyWaiters();
     const discoveryWarning = await this._flushWithTimeout(discovery);
+    if (this.sessionId !== matchingSession || (this.mode !== 'MATCHING_1V1' && this.mode !== 'CONNECTED_1V1')) {
+      throw new Error('匹配已取消。');
+    }
+    if (this.mode === 'MATCHING_1V1') {
+      const timeoutMs = timeoutSeconds === undefined ? this.matchTimeoutMs : timeoutSeconds * 1000;
+      this.matchExpiresAt = Date.now() + timeoutMs;
+      this.matchTimer = setTimeout(() => {
+        if (this.sessionId !== matchingSession || this.mode !== 'MATCHING_1V1') return;
+        this._endMatch('timed_out', '暂未找到匹配的人。可以继续等待或重新匹配。');
+      }, timeoutMs);
+      this.matchTimer.unref?.();
+    }
 
     const relayStatus =
       typeof this.swarm.getRelayStatus === 'function' ? this.swarm.getRelayStatus() : undefined;
@@ -592,6 +647,7 @@ export class P2PMatchManager {
       text: content,
       timestamp,
     });
+    if (delivered && this.displayOnly) this._pushDisplayEvent({ type: 'message', nickname: this.nickname, text: content, outgoing: true });
 
     let publishedToBoard = false;
     if (allowEmptyPlaza && this.plazaBoardTag && this.plazaBoardKey) {
@@ -739,6 +795,12 @@ export class P2PMatchManager {
   }
 
   async leaveChat({ blockPeer = false } = {}) {
+    if (this.matchTimer) clearTimeout(this.matchTimer);
+    this.matchTimer = null;
+    this.matchExpiresAt = null;
+    this.matchState = null;
+    this.lastMatchOptions = null;
+    this.displayEvents = [];
     this._stopPoWRefreshTimer();
 
     if (this.pendingLockTimer) {
@@ -747,11 +809,10 @@ export class P2PMatchManager {
     }
     this.pendingLockPeer = null;
 
-    let blockListChanged = false;
+    const peersToBlock = [];
     for (const [peerId, peer] of this.peers.entries()) {
       if (blockPeer && !this.blockedPubkeys.has(peerId)) {
-        this.blockedPubkeys.add(peerId);
-        blockListChanged = true;
+        peersToBlock.push(peerId);
       }
       this.peers.delete(peerId);
       try {
@@ -796,8 +857,13 @@ export class P2PMatchManager {
     this.inbox = []; // 阅后即焚
     this.imageVault.clear(); // 清空内存图片保险箱
 
-    if (blockListChanged && this.stateFilePath) {
-      await this._saveIdentityStateSafe();
+    if (peersToBlock.length) {
+      await this._queueBlocklistMutation(async () => {
+        await this.preloadState();
+        const next = new Set([...this.blockedPubkeys, ...peersToBlock]);
+        await this._persistBlockedPeers(next);
+        this.blockedPubkeys = next;
+      });
     }
 
     this._notifyWaiters();
@@ -805,9 +871,81 @@ export class P2PMatchManager {
     return { ok: true, blockedCount: this.blockedPubkeys.size };
   }
 
+  async retryMatching() {
+    if (!this.lastMatchOptions || !['ended', 'timed_out'].includes(this.matchState)) {
+      throw new Error('当前没有可以重新匹配的会话。');
+    }
+    return this.startMatching(this.lastMatchOptions);
+  }
+
+  _endMatch(state, notice) {
+    if (this.matchTimer) clearTimeout(this.matchTimer);
+    this.matchTimer = null;
+    this.matchExpiresAt = null;
+    this._stopPoWRefreshTimer();
+    if (this.pendingLockTimer) clearTimeout(this.pendingLockTimer);
+    this.pendingLockTimer = null;
+    this.pendingLockPeer = null;
+    this.mode = 'IDLE';
+    for (const peer of this.peers.values()) peer.socket.destroy();
+    this.peers.clear();
+    for (const pending of this.pendingPeers.values()) pending.socket.destroy();
+    this.pendingPeers.clear();
+    if (this.lobbyTopic) this.swarm?.leave(this.lobbyTopic).catch(() => {});
+    this.lobbyTopic = null;
+    this.matchState = state;
+    this._pushSystemEvent(notice);
+  }
+
+  _pushDisplayEvent(event) {
+    if (!this.displayOnly) return;
+    this.displayEvents.push({ id: ++this.displayCursor, sessionId: this.sessionId, ...event });
+    if (this.displayEvents.length > MAX_INBOX_EVENTS) this.displayEvents.shift();
+    this._notifyWaiters();
+  }
+
+  async readDisplayMessages({ after = 0, sessionId = null, waitSeconds = 0, signal } = {}) {
+    if (!this.displayOnly) throw new Error('当前会话不支持独立显示端。');
+    if (!Number.isSafeInteger(after) || after < 0) throw new Error('消息游标无效。');
+    const currentId = this.sessionId;
+    const firstId = this.displayEvents[0]?.id ?? this.displayCursor + 1;
+    const reset = sessionId !== currentId || after > this.displayCursor || (after > 0 && after < firstId - 1);
+    if (!reset && after === this.displayCursor && waitSeconds > 0 && !signal?.aborted) {
+      await new Promise((resolve) => {
+        let settled = false;
+        const wake = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          this.inboxWaiters = this.inboxWaiters.filter((callback) => callback !== wake);
+          signal?.removeEventListener('abort', wake);
+          resolve();
+        };
+        const timer = setTimeout(wake, Math.min(waitSeconds, 25) * 1000);
+        timer.unref?.();
+        this.inboxWaiters.push(wake);
+        signal?.addEventListener('abort', wake, { once: true });
+      });
+    }
+    const finalFirstId = this.displayEvents[0]?.id ?? this.displayCursor + 1;
+    const finalReset = sessionId !== this.sessionId || after > this.displayCursor || (after > 0 && after < finalFirstId - 1);
+    return {
+      status: { ...this.getStatus(), publicProfile: { nickname: this.nickname, keywords: this.matchKeywords, purpose: this.intentCard?.purpose || '' } },
+      events: signal?.aborted ? [] : this.displayEvents.filter((event) => event.sessionId === this.sessionId && (finalReset || event.id > after)),
+      cursor: this.displayCursor,
+      reset: finalReset,
+    };
+  }
+
   async resetIdentity() {
+    return this._queueBlocklistMutation(() => this._resetIdentity());
+  }
+
+  async _resetIdentity() {
+    await this.preloadState();
     const targetTransport = this.activeTransport || this.defaultTransport;
     await this.leaveChat({ blockPeer: false });
+    await this.identityWriteQueue;
     if (this.swarm) {
       await this.swarm.destroy().catch(() => {});
       this.swarm = null;
@@ -819,8 +957,7 @@ export class P2PMatchManager {
     this.vouchManager = new VouchManager({ vouchPowBits: this.vouchPowBits });
 
     if (this.stateFilePath) {
-      await deleteIdentityState(this.stateFilePath).catch(() => {});
-      await this._saveIdentityStateSafe();
+      await this._persistBlockedPeers(this.blockedPubkeys);
     }
     await this.ensureSwarm(targetTransport);
     return {
@@ -840,20 +977,97 @@ export class P2PMatchManager {
     }
   }
 
-  // ================= 内部协议与连接管理 =================
+  async listBlockedPeers() {
+    await this.preloadState();
+    return { peers: [...this.blockedPubkeys].sort(), blockedCount: this.blockedPubkeys.size };
+  }
+
+  async blockPeer(peerId) {
+    return this._queueBlocklistMutation(async () => {
+      await this.preloadState();
+      const id = this._validateBlockPeerId(peerId);
+      const ownId = this.myPubkeyHex || (
+        this.defaultTransport === 'relay' && !this.swarmFactory && !this.swarmFactories?.relay
+          ? getPublicKey(deriveSecp256k1PrivKey(Buffer.from(this.swarmSeedHex, 'hex'))).toString('hex')
+          : null
+      );
+      if (id === ownId) throw new Error('不能屏蔽自己的节点。');
+      if (this.blockedPubkeys.has(id)) {
+        return { ok: true, added: false, blockedCount: this.blockedPubkeys.size };
+      }
+      const next = new Set(this.blockedPubkeys);
+      next.add(id);
+      await this._persistBlockedPeers(next);
+      this.blockedPubkeys = next;
+      this.pendingPeers.get(id)?.socket.destroy();
+      this.peers.get(id)?.socket.destroy();
+      return { ok: true, added: true, blockedCount: next.size };
+    });
+  }
+
+  async unblockPeer(peerId) {
+    return this._queueBlocklistMutation(async () => {
+      await this.preloadState();
+      const id = this._validateBlockPeerId(peerId);
+      if (!this.blockedPubkeys.has(id)) {
+        return { ok: true, removed: false, blockedCount: this.blockedPubkeys.size };
+      }
+      const next = new Set(this.blockedPubkeys);
+      next.delete(id);
+      await this._persistBlockedPeers(next);
+      this.blockedPubkeys = next;
+      return { ok: true, removed: true, blockedCount: next.size };
+    });
+  }
+
+  _queueBlocklistMutation(change) {
+    const result = this.blocklistQueue.then(change);
+    this.blocklistQueue = result.catch(() => {});
+    return result;
+  }
+
+  clearMediaVault() {
+    const cleared = this.imageVault.items.size;
+    this.imageVault.clear();
+    return { ok: true, cleared };
+  }
+
+  _validateBlockPeerId(peerId) {
+    if (typeof peerId !== 'string' || !/^[a-f0-9]{64}$/i.test(peerId)) {
+      throw new Error('请提供完整的 64 位节点公钥。');
+    }
+    return peerId.toLowerCase();
+  }
+
+  async _persistBlockedPeers(peers) {
+    if (!this.stateFilePath) return;
+    await this._queueIdentityWrite(() => saveIdentityState(this.stateFilePath, {
+      swarmSeedHex: this.swarmSeedHex,
+      vouchState: this.vouchManager.exportState(),
+      blockedPubkeys: [...peers],
+    }));
+  }
+
+  _queueIdentityWrite(write) {
+    const result = this.identityWriteQueue.then(write);
+    this.identityWriteQueue = result.catch(() => {});
+    return result;
+  }
 
   async _saveIdentityStateSafe() {
     if (!this.stateFilePath || !this.swarmSeedHex) return;
     try {
-      await saveIdentityState(this.stateFilePath, {
+      await this._queueIdentityWrite(() => saveIdentityState(this.stateFilePath, {
         swarmSeedHex: this.swarmSeedHex,
         vouchState: this.vouchManager.exportState(),
-        blockedPubkeys: Array.from(this.blockedPubkeys),
-      });
+        blockedPubkeys: [...this.blockedPubkeys],
+      }));
     } catch {
-      // 忽略磁盘异常，保证主流程可用
+      // 忽略周期性保存失败，主流程继续可用
     }
   }
+
+  // ================= 内部协议与连接管理 =================
 
   async _flushWithTimeout(discovery) {
     if (!discovery || typeof discovery.flushed !== 'function') return null;
@@ -1062,9 +1276,8 @@ export class P2PMatchManager {
       type: 'HELLO',
       mode: this.mode,
       nickname: this.nickname,
-      ...(this.matchKeywords
-        ? { keywords: this.matchKeywords.join(',') }
-        : { intentCard: this.intentCard }),
+      ...(this.matchKeywords ? { keywords: this.matchKeywords.join(',') } : {}),
+      ...(this.intentCard && Object.keys(this.intentCard).length ? { intentCard: this.intentCard } : {}),
       powProof: this.powProof,
       vouches: this.vouchManager.getValidVouches({
         minPowBits: this.vouchPowBits,
@@ -1130,6 +1343,7 @@ export class P2PMatchManager {
       } else if (this.mode === 'CONNECTED_1V1') {
         this._pushSystemEvent(`对方（${peerRecord.nickname}）已断开连接，会话结束。`);
         this.mode = 'IDLE';
+        this.matchState = 'ended';
       } else if (this._isMultiPeerMode()) {
         this._pushSystemEvent(`成员 ${peerRecord.nickname}（ID: ${peerId.slice(0, 12)}）离开了房间。`);
       }
@@ -1267,7 +1481,8 @@ export class P2PMatchManager {
       if (this.matchKeywords) {
         try {
           const peerKeywords = normalizeMatchKeywords(frame.keywords);
-          if (!peerKeywords.some((term) => this.matchKeywords.includes(term))) {
+          peerRecord.commonKeywords = peerKeywords.filter((term) => this.matchKeywords.includes(term));
+          if (!peerRecord.commonKeywords.length) {
             peerRecord.socket.destroy();
             return;
           }
@@ -1284,7 +1499,7 @@ export class P2PMatchManager {
       }
 
       peerRecord.nickname = sanitizeUntrustedField(frame.nickname || '匿名真人', 32) || '匿名真人';
-      peerRecord.intentCard = this.matchKeywords ? null : sanitizeIntentCard(frame.intentCard);
+      peerRecord.intentCard = sanitizeIntentCard(frame.intentCard);
       peerRecord.verifiedVouches = validCount;
       peerRecord.helloVerified = true;
 
@@ -1504,6 +1719,10 @@ export class P2PMatchManager {
   }
 
   _finalize1v1Lock(lockedPeerId, lockedPeerRecord) {
+    if (this.matchTimer) clearTimeout(this.matchTimer);
+    this.matchTimer = null;
+    this.matchExpiresAt = null;
+    this.matchState = 'connected';
     this._stopPoWRefreshTimer();
     this.mode = 'CONNECTED_1V1';
     lockedPeerRecord.locked = true;
@@ -1534,6 +1753,9 @@ export class P2PMatchManager {
     this._pushSystemEvent(
       `已建立 1v1 会话：${lockedPeerRecord.nickname}（ID: ${lockedPeerId.slice(0, 12)}，信誉好人卡: ${lockedPeerRecord.verifiedVouches}）。\n对方名片（外部数据）：\n${wrappedCard}`
     );
+    if (this.displayOnly) {
+      this._pushDisplayEvent({ type: 'state', text: `已与 ${lockedPeerRecord.nickname} 匹配。` });
+    }
   }
 
   _checkRateLimit(peerRecord) {
@@ -1568,6 +1790,7 @@ export class P2PMatchManager {
     if (this.displayOnly) {
       event.displayText = scan.sanitizedText;
       event.redacted = scan.sanitizedText !== text;
+      this._pushDisplayEvent({ type: 'message', nickname: peerRecord.nickname, text: event.displayText, redacted: event.redacted, outgoing: false });
     } else {
       event.wrappedContent = wrapUntrustedMessage({
         senderId: peerId,
@@ -1591,6 +1814,9 @@ export class P2PMatchManager {
       message,
     });
     this._trimInbox();
+    if (this.displayOnly && !message.includes('对方名片（外部数据）')) {
+      this._pushDisplayEvent({ type: 'state', text: message });
+    }
     this._notifyWaiters();
   }
 

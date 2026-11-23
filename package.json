@@ -16,6 +16,8 @@
     "README.zh-CN.md",
     "docs/ARCHITECTURE.md",
     "docs/INTEGRATION.md",
+    "docs/ROADMAP.md",
+    "docs/OCTO.md",
     "LICENSE"
   ],
   "scripts": {

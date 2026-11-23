@@ -5,8 +5,8 @@ HumanWire matches strangers who are online and want to talk about a shared inter
 ## 原理
 
 1. **AI 帮忙找人。** 从用户当前的请求中提炼一到五个可以公开的兴趣关键词，例如 `个人网站, 前端开发`。用户也可以直接填写。没有主题时，走 `chat/casual` 闲聊频道。
-2. **HumanWire 建立会话。** 关键词模式先在共用大厅发现候选客户端，然后在握手中比较双方的关键词。有至少一个相同才会建立一对一会话。连接成功表示对端客户端已接入，是否本人在场要看对方是否接话。
-3. **聊天界面自己等消息。** 小窗和发起匹配的 MCP 服务共用一个会话。对端消息到达本地收件箱后，正在等待的浏览器请求会立即返回，界面可以显示消息。AI 这一轮已经结束，收信也能继续。正文和浏览器翻译都走小窗，模型只负责发起匹配、管理会话和看连接状态。
+2. **HumanWire 建立会话。** 关键词模式先在共用大厅发现候选客户端，然后在握手中比较双方的关键词。有至少一个相同才会建立一对一会话。小窗显示共同关键词和对方选择公开的简短介绍。连接成功表示对端客户端已接入，是否本人在场要看对方是否接话。
+3. **聊天界面自己等消息。** 小窗和发起匹配的 MCP 服务共用一个会话。对端消息到达本地后，正在等待的浏览器请求会立即返回，界面可以显示消息。AI 这一轮已经结束，收信也能继续。显示端按游标读取当前会话最近 200 条内存事件，刷新可恢复，多个显示端可各自读取。正文和浏览器翻译都走小窗，模型只负责发起匹配、管理会话和看连接状态。
 4. **宿主决定显示位置。** 当前通用入口是独立小窗。只支持标准 MCP 的宿主可以在当前一轮调用 `poll_messages` 等消息。支持独立界面的宿主可以适配对话内卡片，由卡片自己接收。原生对话框能否在 AI 空闲时插入新消息，取决于宿主提供的接口。
 
 ## Choose an integration route
@@ -45,11 +45,23 @@ With Node.js 22 or newer, configure the host to run the local checkout:
 }
 ```
 
-1. After the user asks to meet someone, call `start_matching` with their preferences.
-2. When the user wants to chat, call `open_chat_window`. It opens a window for the existing matching session. The tool result does not contain the browser access token.
+1. After the user asks to meet someone, call `start_matching` with their preferences. In companion mode it also requests opening the window for that session. Optional `purpose` is a user-approved public introduction. Optional `timeout_seconds` is 1–600, with a default of 60 seconds after discovery setup.
+2. Use `open_chat_window` to reopen the existing session. If the automatic browser launch fails, matching continues and the tool result explains how to retry. The tool result does not contain the browser access token.
 3. Use `get_status` for connection state. The window handles chat input, receive, local translation where available, and optional desktop unread notifications. Use `leave_chat` or the window's End button to leave.
 
-The local browser connects to the same manager on loopback. It keeps one receive request open, with a wait of up to 20 seconds per request. The request returns when a message arrives. The browser opens a new request without asking the model to run. Use one active receiving window per session because the receiver drains a shared inbox. See the [MCP entry point](../src/index.js) and [local window server](../src/chat-window.js).
+The local browser connects to the same manager on loopback. It keeps one receive request open, with a wait of up to 20 seconds per request. The request returns when a message arrives. The browser opens a new request without asking the model to run. Each display reads its own cursor. Legacy native MCP `poll_messages` continues to drain its separate inbox. See the [MCP entry point](../src/index.js) and [local window server](../src/chat-window.js).
+
+## Matching lifecycle and display replay
+
+`get_status` exposes matching state through `matching.state`, with `waiting`, `connected`, `timed_out` or `ended`. A timeout stops discovery. After timeout or disconnect, `retry_matching` starts a new session with the saved keywords, public card, transport and wait preference. `leave_chat` cancels and clears the current session. In companion mode, status tools return state without peer introductions or chat text.
+
+The local UI reads `GET /api/poll?sessionId=<id>&after=<cursor>&wait=20` using the bearer token from its launch link. The result includes `events`, `cursor`, and `reset`. Events have a numeric `id`, a `sessionId`, a `type` of `message` or `state`, and plain `text`. Message events also identify `nickname` and `outgoing`. Outgoing messages appear in this same stream, so adapters can render one copy after sending.
+
+On a session change, invalid future cursor or a cursor older than the retained range, `reset` instructs the UI to replace its transcript. An initial read with `after=0` replays available events. Deduplicate by event ID and suppress unread notifications during that initial replay. Memory is bounded to 200 events and cleared on explicit leave, new session, identity reset or process exit. A peer disconnect preserves the record until the user starts another session or leaves.
+
+`POST /api/retry` requires the current `sessionId`. Include the current `sessionId` in send and leave actions so stale controls can be rejected. These local authenticated UI routes are available to display adapters. The MCP companion tools return only management results. Browser token and replay content stay on the display side.
+
+For an Octo configuration and a host acceptance checklist, see [Octo integration](OCTO.md).
 
 ## Adapt to an embedded chat card
 

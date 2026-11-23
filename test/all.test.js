@@ -842,7 +842,15 @@ test('聊天小窗：关键词相交才匹配，正文通过本地接口收发',
     const a = browserClient(windows[0]);
     const b = browserClient(windows[1]);
 
-    const { sessionId } = await a('/api/join', { mode: 'match', nickname: '北岚', keyword: 'ＰＥＲＳＯＮＡＬ ＷＥＢＳＩＴＥＳ，frontend' });
+    const leakedIntro = await a('/api/join', {
+      mode: 'match', keyword: 'personal websites', purpose: 'sk-proj-abcdefghijklmnopqrstuvwxyz1234567890',
+    }, undefined, 400);
+    assert.match(leakedIntro.error, /密钥/);
+
+    const { sessionId } = await a('/api/join', { mode: 'match', nickname: '北岚', keyword: 'ＰＥＲＳＯＮＡＬ ＷＥＢＳＩＴＥＳ，frontend', purpose: '想聊个人网站' });
+    const profile = await a('/api/poll');
+    assert.equal(profile.publicProfile.purpose, '想聊个人网站');
+    assert.equal(profile.publicProfile.keywords[0], 'personal websites');
     await unrelated.startMatching({ keywords: 'rust, wasm' });
     await waitUntil(() => hub.publishedLogs.some(({ event }) => event.kind === KIND_DEADDROP));
     await waitUntil(() => alice.peers.size === 0 && unrelated.peers.size === 0);
@@ -851,10 +859,16 @@ test('聊天小窗：关键词相交才匹配，正文通过本地接口收发',
 
     await b('/api/join', { mode: 'match', nickname: 'B', keyword: 'personal websites, css' });
     await waitUntil(() => alice.mode === 'CONNECTED_1V1' && bob.mode === 'CONNECTED_1V1');
-    assert.equal((await a('/api/poll')).connected, true);
-    await b('/api/poll'); // Clear the initial match event before opening the background receive.
+    const matched = await a('/api/poll');
+    assert.equal(matched.connected, true);
+    assert.deepEqual(matched.peer.commonKeywords, ['personal websites']);
+    assert.equal(matched.peer.purpose, ''); // A peer without an optional card still matches.
+    const initial = await b('/api/poll');
+    assert.equal(initial.peer.purpose, '想聊个人网站');
+    assert.deepEqual(initial.peer.commonKeywords, ['personal websites']);
+    const currentSession = bob.sessionId;
     const abort = new AbortController();
-    const canceled = b('/api/poll?wait=20', undefined, abort.signal);
+    const canceled = b(`/api/poll?wait=20&after=${initial.cursor}&sessionId=${currentSession}`, undefined, abort.signal);
     const canceledCheck = assert.rejects(canceled, { name: 'AbortError' });
     await waitUntil(() => bob.inboxWaiters.length === 1);
     abort.abort();
@@ -863,18 +877,39 @@ test('聊天小窗：关键词相交才匹配，正文通过本地接口收发',
 
     const stale = await a('/api/send', { text: '上一场聊天的草稿', sessionId: 'old-session' }, undefined, 409);
     assert.match(stale.error, /会话已切换/);
-    const pendingMessage = b('/api/poll?wait=20');
+    const pendingMessage = b(`/api/poll?wait=20&after=${initial.cursor}&sessionId=${currentSession}`);
     await waitUntil(() => bob.inboxWaiters.length === 1);
     assert.deepEqual(await a('/api/send', { text: '你好，聊聊你最近做的网站。', sessionId }), { ok: true });
     // There are no further requests from B. The already open poll delivers the message.
     const { events } = await pendingMessage;
     assert.equal(events.filter((event) => event.type === 'message').length, 1);
     const received = events.find((event) => event.type === 'message');
-    assert.deepEqual(received, {
-      type: 'message', nickname: '北岚', text: '你好，聊聊你最近做的网站。', redacted: false,
-    });
+    assert.equal(received.nickname, '北岚');
+    assert.equal(received.text, '你好，聊聊你最近做的网站。');
+    assert.equal(received.redacted, false);
+    assert.equal(received.outgoing, false);
+    assert.equal(typeof received.id, 'number');
+    const history = await b(`/api/poll?after=0&sessionId=${bob.sessionId}`);
+    assert.equal(history.events.filter((event) => event.type === 'message').length, 1);
+    assert.equal(history.events.find((event) => event.type === 'message').id, received.id);
+    assert.equal((await b(`/api/poll?after=${history.cursor}&sessionId=${bob.sessionId}`)).events.length, 0);
+    const ownHistory = await a(`/api/poll?after=0&sessionId=${sessionId}`);
+    assert.equal(ownHistory.events.find((event) => event.type === 'message' && event.outgoing)?.text,
+      '你好，聊聊你最近做的网站。');
     assert.deepEqual(await b('/api/leave', {}), { ok: true });
     assert.equal((await b('/api/poll')).mode, 'IDLE');
+    await waitUntil(() => alice.mode === 'IDLE');
+    const newMatch = await a('/api/retry', { sessionId });
+    assert.equal(newMatch.mode, 'MATCHING_1V1');
+    assert.notEqual(newMatch.sessionId, sessionId);
+    assert.equal(newMatch.matching.state, 'waiting');
+    const staleRetry = await a('/api/retry', { sessionId }, undefined, 409);
+    assert.match(staleRetry.error, /会话已切换/);
+    await a('/api/leave', { sessionId }, undefined, 409);
+    assert.equal(alice.mode, 'MATCHING_1V1');
+    const afterRetry = await a(`/api/poll?after=${ownHistory.cursor}&sessionId=${sessionId}`);
+    assert.equal(afterRetry.reset, true);
+    assert.equal(afterRetry.events.some((event) => event.text === '你好，聊聊你最近做的网站。'), false);
   } finally {
     await Promise.all(windows.map((window) => window.close()));
     await unrelated.destroy();

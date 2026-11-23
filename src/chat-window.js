@@ -39,12 +39,21 @@ function sendJson(response, status, value) {
 }
 
 function visibleStatus(status) {
+  const peer = status.connectedPeers?.[0];
   return {
     sessionId: status.sessionId,
     mode: status.mode,
     connected: status.mode === 'CONNECTED_1V1' ||
       (status.mode === 'GROUP_ROOM' && status.connectedPeers.length > 0),
     relayCount: status.relayStatus?.connectedRelays ?? 0,
+    matching: status.matching ?? null,
+    publicProfile: status.publicProfile ?? null,
+    peer: peer ? {
+      nickname: peer.nickname,
+      commonKeywords: peer.commonKeywords || [],
+      purpose: peer.intentCard?.purpose || '',
+      language: peer.intentCard?.language || '',
+    } : null,
   };
 }
 
@@ -76,7 +85,12 @@ export async function startChatWindow({ manager, runMutation = createChatMutatio
         });
       } else if (input.mode === 'match') {
         const keywords = typeof input.keyword === 'string' ? input.keyword.trim() : '';
-        result = await manager.startMatching({ nickname, ...(keywords ? { keywords } : {}) });
+        const purpose = typeof input.purpose === 'string' ? input.purpose.trim() : '';
+        if (purpose.length > 120) throw new RequestError(400, '公开介绍最多 120 字。');
+        if (detectOutboundSecretLeak(purpose)) throw new RequestError(400, '公开介绍似乎含有密钥，请先去掉再匹配。');
+        result = await manager.startMatching({ nickname, ...(keywords ? { keywords } : {}),
+          intentCard: purpose ? { purpose } : {},
+        });
       } else {
         throw new RequestError(400, '请选择同好匹配或房间。');
       }
@@ -88,8 +102,19 @@ export async function startChatWindow({ manager, runMutation = createChatMutatio
     }
 
     if (path === '/api/leave') {
+      if (input.sessionId !== undefined && input.sessionId !== manager.sessionId) {
+        throw new RequestError(409, '会话已切换，请确认当前会话后再结束。');
+      }
       await manager.leaveChat();
       return { ok: true };
+    }
+
+    if (path === '/api/retry') {
+      if (typeof input.sessionId !== 'string' || input.sessionId !== manager.sessionId) {
+        throw new RequestError(409, '会话已切换，请确认当前匹配后重试。');
+      }
+      const result = await manager.retryMatching();
+      return { ...visibleStatus(manager.getStatus()), channel: result.channel };
     }
 
     if (typeof input.sessionId !== 'string' || input.sessionId !== manager.sessionId) {
@@ -137,25 +162,26 @@ export async function startChatWindow({ manager, runMutation = createChatMutatio
 
     try {
       if (request.method === 'GET' && path === '/api/poll') {
-        const requested = Number(new URLSearchParams(query).get('wait'));
+        const params = new URLSearchParams(query);
+        const requested = Number(params.get('wait'));
         const wait = Number.isFinite(requested) ? Math.max(0, Math.min(requested, 20)) : 0;
+        const after = Number(params.get('after') || 0);
+        if (!Number.isSafeInteger(after) || after < 0) throw new RequestError(400, '消息位置无效。');
         const poll = new AbortController();
         response.once('close', () => poll.abort());
-        const { status, events } = await manager.pollMessages(wait, { signal: poll.signal });
+        const { status, events, cursor, reset } = await manager.readDisplayMessages({
+          after, sessionId: params.get('sessionId'), waitSeconds: wait, signal: poll.signal,
+        });
         if (poll.signal.aborted) return;
         sendJson(response, 200, {
           ...visibleStatus(status),
-          events: events.filter((event) => typeof event.displayText === 'string').map((event) => ({
-            type: 'message',
-            nickname: event.nickname,
-            text: event.displayText,
-            redacted: event.redacted,
-          })),
+          cursor, reset,
+          events,
         });
         return;
       }
 
-      if (request.method !== 'POST' || !['/api/join', '/api/send', '/api/leave'].includes(path)) {
+      if (request.method !== 'POST' || !['/api/join', '/api/send', '/api/leave', '/api/retry'].includes(path)) {
         throw new RequestError(404, '找不到这个入口。');
       }
       const input = await readJson(request);

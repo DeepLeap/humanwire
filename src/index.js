@@ -74,7 +74,7 @@ function parseCliConfig(argv, env) {
 }
 
 const config = parseCliConfig(process.argv.slice(2), process.env);
-const runMutation = config.chatWindow ? createChatMutationGuard() : (operation) => operation();
+const runMutation = createChatMutationGuard();
 
 const manager = new P2PMatchManager({
   defaultTransport: config.defaultTransport,
@@ -104,23 +104,37 @@ let chatWindowPromise;
 let browserOpenPromise;
 let shuttingDown = false;
 
+async function showChatWindow() {
+  if (shuttingDown) throw new Error('HumanWire 正在关闭。');
+  chatWindowPromise ??= startChatWindow({ manager, runMutation }).catch((error) => {
+    chatWindowPromise = undefined;
+    throw error;
+  });
+  const chatWindow = await chatWindowPromise;
+  if (shuttingDown) throw new Error('HumanWire 正在关闭。');
+  browserOpenPromise ??= openBrowser(chatWindow.url).finally(() => {
+    browserOpenPromise = undefined;
+  });
+  await browserOpenPromise;
+}
+
+async function matchingResult(result) {
+  if (!config.chatWindow) return jsonResult(result);
+  try {
+    await showChatWindow();
+    return jsonResult({ ...result, note: '已请求打开当前匹配的小窗，可在那里等待和聊天。' });
+  } catch (error) {
+    return jsonResult({ ...result, note: '匹配已开始。请调用 open_chat_window 重试打开小窗。', windowError: error.message });
+  }
+}
+
 if (config.chatWindow) {
   server.registerTool({
     name: 'open_chat_window',
     description: '用户请求聊天或打开小窗时，打开与当前匹配或房间共用会话的 HumanWire 窗口。双方聊天正文只在小窗里收发。',
     inputSchema: { type: 'object', properties: {} },
     handler: async () => {
-      if (shuttingDown) throw new Error('HumanWire 正在关闭。');
-      chatWindowPromise ??= startChatWindow({ manager, runMutation }).catch((error) => {
-        chatWindowPromise = undefined;
-        throw error;
-      });
-      const chatWindow = await chatWindowPromise;
-      if (shuttingDown) throw new Error('HumanWire 正在关闭。');
-      browserOpenPromise ??= openBrowser(chatWindow.url).finally(() => {
-        browserOpenPromise = undefined;
-      });
-      await browserOpenPromise;
+      await showChatWindow();
       return jsonResult({ ok: true, note: '已请求打开 HumanWire 小窗。新消息会在小窗里显示。' });
     },
   });
@@ -129,7 +143,7 @@ if (config.chatWindow) {
 server.registerTool({
   name: 'start_matching',
   description:
-    '完成异步微型 PoW 后加入公共大厅，按共有关键词或精确频道寻找 1v1 在线真人。默认使用 relay；切换 p2p 需传 allow_ip_exposure=true。',
+    '用户想认识陌生人或找同好时使用。按公开关键词或精确频道寻找一个在线聊天对象，默认最多等待 60 秒。relay 为默认传输，p2p 需用户同意 IP 暴露。',
   inputSchema: {
     type: 'object',
     properties: {
@@ -152,7 +166,7 @@ server.registerTool({
       purpose: {
         type: 'string',
         maxLength: 120,
-        description: '脱敏后的简短需求说明',
+        description: '用户选择公开的简短介绍，会展示给匹配对象。仅使用用户确认可公开的内容。',
       },
       language: {
         type: 'string',
@@ -165,6 +179,13 @@ server.registerTool({
         minimum: 0,
         default: 0,
         description: '可选：要求对方至少持有的有效好人卡数量',
+      },
+      timeout_seconds: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 600,
+        default: 60,
+        description: '本次寻找的最长秒数。超时后停止匹配，可用 retry_matching 继续寻找。',
       },
       transport: {
         type: 'string',
@@ -185,30 +206,39 @@ server.registerTool({
     purpose,
     language,
     min_vouches,
+    timeout_seconds,
     transport,
     allow_ip_exposure,
   }) => {
+    if (purpose && detectOutboundSecretLeak(purpose)) {
+      throw new Error('公开介绍似乎含有密钥，请先去掉再匹配。');
+    }
     const res = await runMutation(() => manager.startMatching({
       channel,
       keywords,
       nickname,
-      intentCard: { purpose: purpose || '随便聊聊/互助', language },
+      intentCard: { ...(purpose ? { purpose } : {}), language },
       minVouches: min_vouches,
+      timeoutSeconds: timeout_seconds,
       transport,
       allowIpExposure: allow_ip_exposure,
     }));
-    if (config.chatWindow) {
-      return jsonResult({ ...res, note: '已开始匹配。请用 open_chat_window 打开小窗等待消息。' });
-    }
-    return jsonResult(res);
+    return matchingResult(res);
   },
+});
+
+server.registerTool({
+  name: 'retry_matching',
+  description: '用户希望继续等待或再找一个人时，沿用上次关键词和公开介绍重新匹配。当前会话的本地记录会清空。',
+  inputSchema: { type: 'object', properties: {} },
+  handler: async () => matchingResult(await runMutation(() => manager.retryMatching())),
 });
 
 server.registerTool({
   name: 'join_room',
   description: config.chatWindow
-    ? '凭房间码加入加密聊天。省略房间码可创建新房间，用 open_chat_window 打开同一会话的文本聊天小窗。'
-    : '凭房间码和朋友/同事的 AI 客户端一键跨端加密联机（支持传脱敏日志与去 EXIF 截图）。不传 room_code 时自动生成高熵暗号房间码并返回可复制给朋友的邀请口令。',
+    ? '用户要邀请认识的人或已拿到房间码时使用。省略房间码会创建房间，用 open_chat_window 打开同一会话的小窗。'
+    : '用户要邀请认识的人或已拿到房间码时使用。省略 room_code 会创建房间并返回邀请口令，提供 room_code 则加入该房间。',
   inputSchema: {
     type: 'object',
     properties: {
@@ -265,7 +295,7 @@ server.registerTool({
 registerLegacyChatTool({
   name: 'join_plaza',
   description:
-    '加入内置的“全局公开广场”多人聊天室（默认 plaza="global"，支持实时群聊 + 自动拉取最近 24 小时广场加密留言板，彻底解决 1v1 没人时的冷启动干等）。',
+    '用户想浏览公开话题或向多人留言时使用。进入公开广场并读取中继可提供的最近 24 小时范围内留言，默认 plaza="global"。进入会退出当前匹配或房间。',
   inputSchema: {
     type: 'object',
     properties: {
@@ -498,10 +528,43 @@ server.registerTool({
         connected: status.mode === 'CONNECTED_1V1' ||
           (status.mode === 'GROUP_ROOM' && status.connectedPeers.length > 0),
         relayCount: status.relayStatus?.connectedRelays ?? 0,
+        matching: status.matching ? {
+          state: status.matching.state,
+          expiresAt: status.matching.expiresAt,
+          canRetry: status.matching.canRetry,
+        } : null,
       });
     }
     return jsonResult(status);
   },
+});
+
+server.registerTool({
+  name: 'manage_blocklist',
+  description: '按用户意愿查看、添加或解除本地屏蔽。添加时省略 peer_id 可屏蔽当前唯一对端，指定节点或解除时使用完整公钥。添加会立即断开与该节点的现有连接。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      action: { type: 'string', enum: ['list', 'add', 'remove'], default: 'list' },
+      peer_id: { type: 'string', pattern: '^[a-fA-F0-9]{64}$', description: '添加或解除时使用完整的 64 位十六进制节点公钥。' },
+    },
+  },
+  handler: async ({ action = 'list', peer_id }) => runMutation(async () => {
+    await manager.preloadState();
+    if (action === 'add') {
+      const peerId = peer_id || (manager.peers.size === 1 ? manager.peers.keys().next().value : null);
+      return jsonResult(await manager.blockPeer(peerId));
+    }
+    if (action === 'remove') return jsonResult(await manager.unblockPeer(peer_id));
+    return jsonResult(await manager.listBlockedPeers());
+  }),
+});
+
+registerLegacyChatTool({
+  name: 'clear_media_vault',
+  description: '用户要丢弃收到的图片时，清空内存图片隔离区。当前聊天连接和文字记录继续保留。',
+  inputSchema: { type: 'object', properties: {} },
+  handler: async () => jsonResult(manager.clearMediaVault()),
 });
 
 server.registerTool({

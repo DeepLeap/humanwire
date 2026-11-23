@@ -1,6 +1,6 @@
 # HumanWire (`humanwire-mcp`) — 产品与技术架构文档
 
-> **文档版本**：v0.5.1
+> **功能基线** v0.5.1，包含当前工作区的匹配与收信改进
 >
 > **维护方**：YUKE · DeepLeap ([github.com/DeepLeap/humanwire](https://github.com/DeepLeap/humanwire))
 
@@ -70,7 +70,7 @@ HumanWire 让用户按兴趣匹配在线陌生人，一对一聊天、认识新�
 ```mermaid
 flowchart TB
     A["1. 交互与指令层 (宿主 AI + SKILL.md)\n朋友联机引导 · 广场兜底 · IP 护栏警示 · 翻译 · 视觉安检"]
-    B["2. 零依赖 MCP 协议层 (src/mcp-stdio.js + src/index.js)\n手写 JSON-RPC 2.0 Stdio · 10 个工具 · 默认一次性身份"]
+    B["2. 零依赖 MCP 协议层 (src/mcp-stdio.js + src/index.js)\nJSON-RPC 2.0 Stdio · 默认一次性身份"]
     C["3. 本地安全与状态引擎 (safety / pow / media / vouch / identity)\n双语正则 · 非信标签隔离 · 异步 PoW · EXIF 剥离 · Ed25519 v2"]
     D1["4A. 默认引擎: 匿名死信箱 & 广场板 Relay (transport-relay + nostr-crypto + proxy-ws)\n一次性假公钥 · 单向 HMAC routeTag · 24h 加密留言回放 · HTTP/SOCKS5H 代理"]
     D2["4B. 可选引擎: P2P 直连 (transport-p2p)\n动态加载 hyperswarm · 需 allow_ip_exposure=true · 支持 2MB 大图"]
@@ -79,29 +79,34 @@ flowchart TB
     C <-. 显式授权才开启 .-> D2
 ```
 
-### 4.2 核心 MCP 工具接口（共 10 个工具）
+### 4.2 核心 MCP 工具接口
 
 | 工具名 | 关键参数 | 核心职责 |
 | :--- | :--- | :--- |
 | `join_room` | `room_code`（可选）, `nickname`, `max_peers`, `transport`, `allow_ip_exposure` | **朋友/同事 AI 加密联机**：不传码自动生成高熵暗号与可复制邀请口令，进入 2–16 人加密群 |
 | `join_plaza` | `plaza`, `nickname`, `max_peers`, `transport`, `allow_ip_exposure` | **进入内置全局公开广场**（默认 `global`），实时群聊 + 自动拉取最近 24h 加密留言回放 |
-| `start_matching` | `channel`, `nickname`, `purpose`, `language`, `min_vouches`, `transport`, `allow_ip_exposure` | 完成异步 PoW 后加入 1v1 大厅，暂无人时自动返回广场与建房引导 |
+| `start_matching` | `keywords` 或 `channel`, `nickname`, `purpose`, `language`, `timeout_seconds`, `min_vouches`, `transport`, `allow_ip_exposure` | 按公开兴趣寻找一个人，默认等待 60 秒，超时后可继续寻找 |
+| `retry_matching` | 无 | 超时或断线后沿用上次偏好开始新会话 |
+| `open_chat_window` | 无 | 小窗模式中重新打开当前会话，发起匹配时也会自动请求打开 |
 | `poll_messages` | `wait_seconds`（0–25 秒，默认 8 秒） | 拉取实时消息、24h 广场历史留言、待审图片通知、系统事件与冷启动引导 |
-| `send_to_peer` | `message`, `auto_sanitize` | 发送文本（广场模式同步加密落盘到 24h 留言板）；支持一键脱敏与密钥阻断 |
+| `send_to_peer` | `message`, `auto_sanitize` | 发送文本，支持脱敏与密钥阻断。广场模式还会向中继发布加密留言，留存取决于中继 |
 | `send_image_file` | `file_path`, `caption` | 校验并剥离 EXIF/GPS 后发送图片（`relay` 上限 400KB 分片，`p2p` 上限 2MB） |
 | `inspect_image` | `image_id` | 从内存保险箱调出待审图片与隔离封装说明，交给宿主多模态 AI 执行视觉安检 |
 | `issue_vouch` | `tag`, `peer_id` | 签发绑定节点 ID 与抗女巫 PoW 的 Ed25519 好人卡（群聊/广场需指定 `peer_id`） |
+| `manage_blocklist` | `action`, `peer_id` | 查看、添加或解除节点屏蔽，指定节点时使用完整公钥 |
+| `clear_media_vault` | 无 | 清空收到的图片，保留当前会话与文字 |
 | `get_status` | 无 | 返回当前模式、隐私配置、活跃引擎、中继/代理状态、成员与好人卡统计 |
 | `leave_chat` | `block_peer`, `reset_identity` | 断开并清空内存消息、广场去重记录与图片缓存；可选拉黑对端或重置身份 |
 
+工具会随接入方式提供。小窗模式通过本地显示接口收发正文，原生 MCP 模式提供文字与图片工具。当前会话最多保留 200 条显示事件，显式结束或重新匹配时清空。宿主接法与游标约定见[接入指南](INTEGRATION.md)。
+
 ---
 
-## 5. 分阶段落地路线图
+## 5. 版本里程碑
 
-* **v0.1 – v0.3（已完成）**：原型跑通、零重型模型架构、全量状态机与安全漏洞修复、EXIF 剥离与抗女巫好人卡。
-* **v0.4.0 – v0.4.1（已完成）**：彻底零强制依赖（`dependencies: {}`）、双引擎热切换、匿名死信箱路由、分桶 Padding、原生代理隧道与 P2P 暴露 IP 硬护栏。
-* **v0.5.0 冷启动破局版（当前版本 ✅）**：
-  * `join_room` 升级为免填码自动生成高熵暗号与一键邀请口令，主打**朋友/同事 AI 跨端协同**；
-  * 新增 **`join_plaza` 全局公开广场**（实时多人加密聊 + `KIND_PLAZA_POST` 24 小时加密留言板回放 + 双通路去重 + 1v1 无人自动兜底引导）。
-* **本地聊天小窗**：运行 `npm run chat`，从浏览器直接收发聊天消息。小窗与 AI 会话分开，支持公开关键词匹配、房间和浏览器本地翻译。
-* **后续规划**：在有独立聊天界面能力的 AI 宿主中接入小窗，完善技术留言的关联回复与回访。
+- **v0.1 – v0.3** 完成匹配与聊天原型、会话状态机、图片 EXIF 清理与好人卡。
+- **v0.4.0 – v0.4.1** 移除强制运行时依赖，提供中继与可选直连、匿名死信箱路由、分桶填充、代理隧道和直连 IP 暴露确认。
+- **v0.5.0** 增加自动生成房间码、全局公开广场，以及匹配不到人时的指引。广场可读取中继返回的最近 24 小时范围内的留言。
+- **v0.5.1** 加入公开关键词匹配和本地聊天小窗。运行 `npm run chat` 可以打开独立小窗，进行匹配、加入房间和收发文字。浏览器支持时可使用本地翻译。
+
+待办、负责人、当前进度和验收条件见[开发路线图与协作进度](ROADMAP.md)。
