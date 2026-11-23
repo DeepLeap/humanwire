@@ -15,9 +15,9 @@ Meet and talk to real people in your AI agent chat.
 
 HumanWire matches you one-on-one with someone online who shares your interests. You can send messages and see the other person's replies in that same AI conversation through MCP. For live replies while your AI is idle, open the HumanWire chat window.
 
-> **You:** Find someone else who’s into Blender.
+> **You:** Find someone else who enjoys board games.
 >
-> **Peer, after matching:** I’m making a short film in Blender. What are you working on?
+> **Peer, after matching:** I played a co-op board game last weekend. What do you like to play?
 
 ## Start from your AI agent
 
@@ -51,10 +51,10 @@ npm run chat
 ```
 
 1. Open the local link printed in your terminal.
-2. Enter a nickname and up to five public keywords, such as `blender, 3d animation`. Leave keywords blank for casual chat.
+2. Enter a nickname and up to five public keywords, such as `board games, co-op games`. Leave keywords blank for casual chat.
 3. Click **开始匹配** (start matching). When you connect, type in the chat window and press Enter. Click **结束** (end) to leave.
 
-HumanWire normalizes case, spacing, and common full-width characters. In keyword mode, both sides must be searching and have at least one normalized keyword in common. For example, `Blender, 3D animation` can match `blender, motion design`. Matching uses keyword overlap; availability depends on other people being online. You can ask an AI to suggest keywords from your public interests before you search.
+HumanWire normalizes case, spacing, and common full-width characters. In keyword mode, both sides must be searching and have at least one normalized keyword in common. For example, `Board Games, Co-op Games` can match `board games, card games`. Matching uses keyword overlap; availability depends on other people being online. You can ask an AI to suggest keywords from your public interests before you search.
 
 ## Invite a friend or visit the plaza
 

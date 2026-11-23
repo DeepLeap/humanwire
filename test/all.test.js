@@ -842,14 +842,14 @@ test('聊天小窗：关键词相交才匹配，正文通过本地接口收发',
     const a = browserClient(windows[0]);
     const b = browserClient(windows[1]);
 
-    const { sessionId } = await a('/api/join', { mode: 'match', nickname: '北岚', keyword: 'Ｃ４Ｄ，Redshift' });
+    const { sessionId } = await a('/api/join', { mode: 'match', nickname: '北岚', keyword: 'ＢＯＡＲＤ ＧＡＭＥＳ，co-op games' });
     await unrelated.startMatching({ keywords: 'rust, wasm' });
     await waitUntil(() => hub.publishedLogs.some(({ event }) => event.kind === KIND_DEADDROP));
     await waitUntil(() => alice.peers.size === 0 && unrelated.peers.size === 0);
     assert.equal((await a('/api/poll')).mode, 'MATCHING_1V1');
     assert.equal(unrelated.mode, 'MATCHING_1V1');
 
-    await b('/api/join', { mode: 'match', nickname: 'B', keyword: 'redshift, materials' });
+    await b('/api/join', { mode: 'match', nickname: 'B', keyword: 'board games, card games' });
     await waitUntil(() => alice.mode === 'CONNECTED_1V1' && bob.mode === 'CONNECTED_1V1');
     assert.equal((await a('/api/poll')).connected, true);
     await b('/api/poll'); // Clear the initial match event before opening the background receive.
@@ -865,13 +865,13 @@ test('聊天小窗：关键词相交才匹配，正文通过本地接口收发',
     assert.match(stale.error, /会话已切换/);
     const pendingMessage = b('/api/poll?wait=20');
     await waitUntil(() => bob.inboxWaiters.length === 1);
-    assert.deepEqual(await a('/api/send', { text: '你好，聊聊材质。', sessionId }), { ok: true });
+    assert.deepEqual(await a('/api/send', { text: '你好，聊聊你最近玩的桌游。', sessionId }), { ok: true });
     // There are no further requests from B. The already open poll delivers the message.
     const { events } = await pendingMessage;
     assert.equal(events.filter((event) => event.type === 'message').length, 1);
     const received = events.find((event) => event.type === 'message');
     assert.deepEqual(received, {
-      type: 'message', nickname: '北岚', text: '你好，聊聊材质。', redacted: false,
+      type: 'message', nickname: '北岚', text: '你好，聊聊你最近玩的桌游。', redacted: false,
     });
     assert.deepEqual(await b('/api/leave', {}), { ok: true });
     assert.equal((await b('/api/poll')).mode, 'IDLE');
@@ -1045,7 +1045,7 @@ test('v0.4.1 默认 relay 匿名死信箱：防 IP 护栏、社交图谱隐身�
 
     // 3. 匿名死信箱路由与分桶填充校验：一短一长两句消息在网络上的密文 data 长度必须完全一致，且外层无真实公钥/p标签
     const shortText = 'ok_short_tag';
-    const longText = '这是一条超过一百字节的较长中文技术消息：C4D Redshift 渲染节点正在同步测试固定档位长度填充效果！';
+    const longText = '这是一条超过一百字节的中文测试消息，用来核对多中继转发时，较长的文本能按固定档位填充并正确还原。';
 
     const beforeShortIdx = hub.publishedLogs.length;
     mgrA.sendMessage(shortText);
@@ -1109,7 +1109,7 @@ test('v0.4.1 默认 relay 匿名死信箱：防 IP 护栏、社交图谱隐身�
     const medPngPath = path.join(tmpDir, 'med.png');
     await fs.writeFile(medPngPath, buildMinimalPng('SENSITIVE_CAMERA_INFO', 120 * 1024));
     const beforeDataCount = hub.publishedLogs.filter((l) => l.event.kind === KIND_DEADDROP).length;
-    const sendImgRes = await mgrA.sendImageFile({ filePath: medPngPath, caption: '渲染预览图' });
+    const sendImgRes = await mgrA.sendImageFile({ filePath: medPngPath, caption: '棋盘照片' });
     assert.equal(sendImgRes.transport, 'relay');
     assert.ok(sendImgRes.strippedMetadataBytes > 0);
 
@@ -1467,7 +1467,7 @@ test('v0.5 冷启动破局：朋友 AI 免填码一键建房联机 + 1v1 冷启�
     assert.equal(plazaA.mode, 'PLAZA_ROOM');
     assert.equal(plazaA.historyEnabled, true);
 
-    const plazaMsgText = '深夜打卡：有人在做 C4D 科研可视化或 Agent 工具吗？';
+    const plazaMsgText = '晚上好，最近有人在玩合作桌游吗？';
     const sendPlazaRes = mgrA.sendMessage(plazaMsgText);
     assert.equal(sendPlazaRes.publishedToBoard, true);
 
