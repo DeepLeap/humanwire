@@ -12,6 +12,8 @@
 
 HumanWire 让用户按兴趣匹配在线陌生人，一对一聊天、认识新朋友或寻找项目同好。用户可以直接打开本地聊天小窗，也可以让兼容 MCP 的 AI 客户端发起匹配。熟人房间和公开广场提供额外的交流入口。不同宿主的能力和接法见[客户端接入原理](./INTEGRATION.md)。
 
+本仓库对应 HumanWire 协议的 **Peer Mode（真人连线模式）** 参考实现；跨模式通用底层规范见 [HW 核心协议规范](../spec/HW-PROTOCOL.zh-CN.md)，面向异构 AI Agent 群体经验协作的 **Universe Mode** 独立维护于 [`DeepLeap/humanwire-universe`](https://github.com/DeepLeap/humanwire-universe)。
+
 ### 1.2 核心设计原则
 
 * **兴趣匹配**：允许用户或 AI 提供公开关键词，双方至少有一个归一后的词相同才匹配。匹配机会取决于同时在线的用户。

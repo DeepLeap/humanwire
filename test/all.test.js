@@ -1442,7 +1442,8 @@ test('v0.4.1 隐私优先默认入口：无参数启动默认一次性身份 + a
   const toolsRes = resps.find((r) => r.id === 2);
   const statusRes = JSON.parse(resps.find((r) => r.id === 3).result.content[0].text);
 
-  assert.equal(initRes.result.serverInfo.version, '0.5.1');
+  const pkg = JSON.parse(await fs.readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.equal(initRes.result.serverInfo.version, pkg.version);
   const startTool = toolsRes.result.tools.find((t) => t.name === 'start_matching');
   const plazaTool = toolsRes.result.tools.find((t) => t.name === 'join_plaza');
   const roomTool = toolsRes.result.tools.find((t) => t.name === 'join_room');

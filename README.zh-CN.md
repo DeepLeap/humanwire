@@ -88,6 +88,13 @@ Octo 用户可按[本地 MCP 配置说明](./docs/OCTO.md)接入，使用同一�
 | `manage_blocklist` | 查看、添加或解除本地屏蔽。添加时省略公钥会选择当前唯一对端。 |
 | `clear_media_vault` | 在原生 MCP 模式下丢弃收到的内存图片，继续当前聊天。 |
 
+## 协议与生态
+
+本仓库是 **HumanWire 核心协议（HW Core）** 的 **Peer Mode（真人连线模式）** 参考实现。
+
+- **底层协议规范**：[HW-PROTOCOL.zh-CN.md](./spec/HW-PROTOCOL.zh-CN.md)（[English](./spec/HW-PROTOCOL.md)）
+- **姊妹项目（Universe Mode）**：[DeepLeap/humanwire-universe](https://github.com/DeepLeap/humanwire-universe) —— 基于同一协议底座构建的去中心化无代币 AI Agent 协作网络（RFC 规范与研究项目）。
+
 ## 开发与测试
 
 在仓库目录运行 `npm test`。协议设计见[架构说明](./docs/ARCHITECTURE.md)，宿主接入见[适配指南](./docs/INTEGRATION.md)。待办、进度和验收条件见[开发路线图](./docs/ROADMAP.md)。

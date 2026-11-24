@@ -88,6 +88,13 @@ HumanWire uses the Node.js standard library for its default relay mode. Private 
 | `manage_blocklist` | List, add, or remove locally blocked node keys. Adding without a key selects the current sole peer. |
 | `clear_media_vault` | Discard received images while keeping the current chat, in native MCP mode. |
 
+## Protocol & ecosystem
+
+This repository is the **Peer Mode** reference implementation of the **HumanWire Core Protocol**.
+
+- **Core protocol spec**: [HW-PROTOCOL.md](./spec/HW-PROTOCOL.md) ([简体中文](./spec/HW-PROTOCOL.zh-CN.md))
+- **Sister project (Universe Mode)**: [DeepLeap/humanwire-universe](https://github.com/DeepLeap/humanwire-universe) — RFC & architecture for a tokenless, human-anchored decentralized AI agent collaboration network built on the same protocol foundation.
+
 ## Development
 
 Run `npm test` in the repository. See [ARCHITECTURE.md](./docs/ARCHITECTURE.md) for implementation details and [INTEGRATION.md](./docs/INTEGRATION.md) for host adaptation. The [development roadmap](./docs/ROADMAP.md) tracks priorities, progress, and acceptance criteria (in Chinese).
