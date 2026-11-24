@@ -13,7 +13,7 @@ HumanWire 让用户在自己的 Agent 里按兴趣匹配陌生人，并跟真人
 | 当前会话消息回看 | 已实现，本地验收通过 | 收发及状态最多保留 200 条内存事件，显示端按游标独立读取。刷新可以回看，重复读取不会重复显示。换人和主动结束时清空。原生 MCP 保留 `poll_messages` 收信和 `send_to_peer` 发信。测试覆盖记录上限、过期游标、跨会话等待与取消。 | [游标读取](../src/p2p.js)、[显示端契约](INTEGRATION.md)、[边界测试](../test/matching.test.js) |
 | 屏蔽管理与图片清理 | 已实现，自动化验收通过 | `manage_blocklist` 可查看、添加和解除屏蔽。`clear_media_vault` 可单独清理收到的图片。持久身份模式检查重启恢复与写盘失败，清图保留文字与会话。 | [管理实现](../src/p2p.js)、[管理测试](../test/management.test.js) |
 | 工具说明与 MCP 属性 | 已实现，自动化验收通过 | 补充调用条件、会话切换、清理和返回值说明。工具注册及 `tools/list` 完整保留四项 `annotations`。测试验证原生和小窗入口，兼容省略注解的旧工具定义。 | [协议层](../src/mcp-stdio.js)、[工具元数据测试](../test/tool-metadata.test.js) |
-| 安装包与目录版本 | GitHub v0.5.2 已发布，npm 等待发布安全验证 | npm 包、MCP 服务版本和 `server.json` 统一为 v0.5.2。发布包两个 MCP 入口检查通过，原生模式 13 个工具、小窗模式 7 个。npm 发布停在账户安全密钥验证，尚待 registry 下载与完整性复核。mcpservers.org 已确认收到资料刷新请求，Glama 按平台流程重新抓取。 | [npm](https://www.npmjs.com/package/humanwire-mcp)、[GitHub Release](https://github.com/DeepLeap/humanwire/releases/tag/v0.5.2)、[Glama 同步流程](https://glama.ai/mcp/methodology) |
+| 安装包与目录版本 | GitHub v0.5.2 已发布，npm 已接受发布并正在处理 | npm 包、MCP 服务版本和 `server.json` 统一为 v0.5.2。发布包两个 MCP 入口检查通过，原生模式 13 个工具、小窗模式 7 个。npm 安全验证完成，CLI 已返回发布成功，尚待 registry 开放下载与完整性复核。mcpservers.org 已确认收到资料刷新请求，Glama 按平台流程重新抓取。 | [npm](https://www.npmjs.com/package/humanwire-mcp)、[GitHub Release](https://github.com/DeepLeap/humanwire/releases/tag/v0.5.2)、[Glama 同步流程](https://glama.ai/mcp/methodology) |
 | Octo 基础接入 | 配置说明完成，宿主待验收 | 提供本地 `stdio` 配置与完整检查步骤，使用现有 HumanWire 包。当前机器未安装 Octo，实际加载、自动打开小窗和宿主空闲收信待测。 | [Octo 接入](OCTO.md) |
 | Octo 破冰与真人接管 | 排队 | 用户主动开启后，用公开资料发一条明确标记为 AI 代发的开场，真人接管时停止自动回复。验收时检查独立会话的实际模型输入与空工具列表，桌面和手机通知分别验证。 | 先完成 Octo 基础接入验收。 |
 
